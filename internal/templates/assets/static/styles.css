@@ -214,7 +214,70 @@ h3 {
 
 .user-token-trigger:hover {
   background: rgba(64, 184, 123, 0.1);
-  box-shadow: 0 6px 14px rgba(26, 38, 52, 0.08);
+  /* box-shadow: 0 6px 14px rgba(26, 38, 52, 0.08); */
+}
+
+.login-card {
+  margin-top: 1.5rem;
+}
+
+.card-intro {
+  margin-bottom: 1rem;
+}
+
+.card-subtitle {
+  margin: 0;
+  color: #65737e;
+  font-size: 0.9rem;
+}
+
+.login-user-grid {
+  margin-top: 1rem;
+}
+
+.login-user-grid .user-item {
+  padding: 0;
+}
+
+.login-user-button {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  transition: background 0.12s ease, box-shadow 0.12s ease, transform 0.06s ease;
+}
+
+.login-user-button:focus {
+  outline: none;
+}
+
+.login-user-button .user-name {
+  color: inherit;
+}
+
+.login-user-button .user-email {
+  color: #4b5b61;
+}
+
+.login-hint {
+  margin-top: 1.5rem;
+  padding: 0.75rem 1rem;
+  background: #f5f6f7;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  color: #516268;
+}
+
+.hint-text {
+  margin: 0;
 }
 
 .user-token-trigger {
@@ -544,4 +607,25 @@ a {
   border-radius: 6px;
   padding: 0.75rem;
   font-size: 0.9rem;
+}
+
+.login-card {
+  margin-top: 1.5rem;
+  padding-bottom: 1.5rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  .login-hint {
+    background: #1f1f1f;
+    /* dark gray background, same as token-modal JSON */
+    color: #d4be98;
+    /* gruvbox light text tone */
+    border: 1px solid #3a3a3a;
+    /* subtle border for contrast */
+  }
+
+  .login-hint code {
+    color: #b8bb26;
+    /* green accent for inline code */
+  }
 }

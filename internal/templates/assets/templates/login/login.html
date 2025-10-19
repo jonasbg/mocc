@@ -3,10 +3,17 @@
 {{define "title"}}Login - Gotiny OIDC Mock{{end}}
 
 {{define "content"}}
-<h1>Select User to Login</h1>
-<p class="login-description">Please select a user from the list below to log in. This will simulate an authentication
-  flow for testing purposes.</p>
-<form method="POST" action="/authorize" class="card">
+<header class="hero card">
+  <div style="display:flex;align-items:center;gap:1rem">
+    <img src="/static/mocc-logo.png" alt="mocc logo" class="logo">
+    <div>
+      <h1 class="page-title">Choose a Test User</h1>
+      <p class="lead">Pick one of the configured accounts below to continue the mock authorization flow.</p>
+    </div>
+  </div>
+</header>
+
+<form method="POST" action="/authorize" class="card login-card">
   <input type="hidden" name="client_id" value="{{.ClientID}}">
   <input type="hidden" name="redirect_uri" value="{{.RedirectURI}}">
   <input type="hidden" name="state" value="{{.State}}">
@@ -14,10 +21,16 @@
   <input type="hidden" name="code_challenge" value="{{.CodeChallenge}}">
   <input type="hidden" name="code_challenge_method" value="{{.CodeChallengeMethod}}">
 
-  <ul class="user-grid">
+  <div class="card-intro">
+    <h3>Available users</h3>
+    <p class="card-subtitle">Tokens will inherit any custom claims defined in <code>users.yaml</code>.</p>
+  </div>
+
+  <ul class="user-grid login-user-grid">
     {{range .Users}}
-    <li>
-      <button type="submit" name="sub" value="{{.Email}}" class="user-button">
+    <li class="user-item">
+      <button type="submit" name="sub" value="{{.Email}}" class="user-token-trigger login-user-button">
+        <div class="user-avatar">{{.Initials}}</div>
         <div class="user-meta">
           <div class="user-name">{{.Name}}</div>
           <div class="user-email">{{.Email}}</div>
@@ -27,5 +40,8 @@
     {{end}}
   </ul>
 
+  <div class="login-hint">
+    <p class="hint-text">Need different claims? Edit <code>users.yaml</code> or use <code>/token/{email}</code> for a custom token.</p>
+  </div>
 </form>
 {{end}}
