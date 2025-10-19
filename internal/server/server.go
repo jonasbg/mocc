@@ -1,9 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -110,6 +112,7 @@ func New(users []config.User, keys *oidc.KeySet) *Server {
 	r.GET("/authorize", s.handleAuthorizeGet)
 	r.POST("/authorize", s.handleAuthorizePost)
 	r.POST("/token", s.handleToken)
+	r.GET("/token/:email", s.handleTokenByEmail)
 	r.GET("/login", s.handleLoginRedirect)
 	r.GET("/jwks.json", s.handleJWKS)
 	r.GET("/.well-known/openid-configuration", s.handleDiscovery)
@@ -258,6 +261,57 @@ func (s *Server) handleToken(c *gin.Context) {
 	}
 	resp := map[string]string{"access_token": token, "id_token": token, "token_type": "Bearer", "expires_in": "300"}
 	c.JSON(200, resp)
+}
+
+func (s *Server) handleTokenByEmail(c *gin.Context) {
+	email := c.Param("email")
+	if email == "" {
+		c.String(400, "Missing email")
+		return
+	}
+	var selected *config.User
+	for i := range s.Users {
+		if s.Users[i].Email == email {
+			selected = &s.Users[i]
+			break
+		}
+	}
+	if selected == nil {
+		c.String(404, "User not found")
+		return
+	}
+	issuer := fmt.Sprintf("http://%s", c.Request.Host)
+	claims := jwt.MapClaims{
+		"sub":   selected.Sub,
+		"email": selected.Email,
+		"iss":   issuer,
+	}
+	if selected.Name != "" {
+		claims["name"] = selected.Name
+	}
+	if c.Request.Body != nil {
+		body, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			c.String(400, "Failed to read body")
+			return
+		}
+		if len(bytes.TrimSpace(body)) > 0 {
+			extras := map[string]interface{}{}
+			if err := json.Unmarshal(body, &extras); err != nil {
+				c.String(400, "Invalid JSON body")
+				return
+			}
+			for k, v := range extras {
+				claims[k] = v
+			}
+		}
+	}
+	token, err := s.Keys.SignIDToken(claims)
+	if err != nil {
+		c.String(500, "Failed to sign token")
+		return
+	}
+	c.JSON(200, gin.H{"token": token, "claims": claims})
 }
 
 func (s *Server) handleJWKS(c *gin.Context) {

@@ -11,6 +11,11 @@
   --success-border: #dcfce7;
   --success-text: #166534;
   --success-icon: #16a34a;
+  /* Token modal theming variables (default = light theme) */
+  --token-modal-dialog-bg: #ffffff;
+  --token-modal-json-bg: #f5f6f7;
+  --token-modal-raw-bg: #f5f6f7;
+  --token-modal-text: var(--dark-text);
   font-family: 'Manrope', 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
   /* Load Manrope locally */
   font-family: 'Manrope', 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
@@ -64,7 +69,15 @@ body {
     /* gruvbox light1 */
   }
 
-  a {
+  /* Token modal variable overrides for dark theme */
+  :root {
+    --token-modal-dialog-bg: #2d2d2d;
+    --token-modal-json-bg: #1f1f1f;
+    --token-modal-raw-bg: #1f1f1f;
+    --token-modal-text: #ebdbb2;
+  }
+
+  +a {
     color: #b8bb26;
     /* gruvbox green */
   }
@@ -187,6 +200,66 @@ h3 {
   background: transparent;
 }
 
+.user-token-trigger {
+  cursor: pointer;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition: background 0.12s ease, box-shadow 0.12s ease, transform 0.06s ease;
+}
+
+.user-token-trigger:focus-visible {
+  outline: 3px solid rgba(64, 184, 123, 0.45);
+  outline-offset: 2px;
+}
+
+.user-token-trigger:hover {
+  background: rgba(64, 184, 123, 0.1);
+  box-shadow: 0 6px 14px rgba(26, 38, 52, 0.08);
+}
+
+.user-token-trigger {
+  cursor: pointer;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition:
+    background 0.12s ease,
+    box-shadow 0.12s ease,
+    border-color 0.12s ease,
+    transform 0.06s ease;
+}
+
+.user-token-trigger:hover {
+  background: rgba(64, 184, 123, 0.1);
+  border-color: var(--primary-green);
+  box-shadow: 0 6px 14px rgba(26, 38, 52, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  .token-modal__dialog {
+    background: #2d2d2d;
+    color: #ebdbb2;
+  }
+
+  .token-modal__json,
+  .token-modal__raw {
+    background: #1f1f1f;
+    /* dark gray background */
+    color: #ebdbb2;
+    /* light text */
+    border: 1px solid #3a3a3a;
+    /* subtle border to separate */
+  }
+
+  .token-modal__json-line {
+    color: #ebdbb2;
+  }
+
+  .timestamp-claim {
+    border-bottom-color: #ebdbb2;
+  }
+}
+
+
 .user-grid .user-meta {
   display: flex;
   flex-direction: column;
@@ -266,6 +339,16 @@ h3 {
   font-weight: 500;
 }
 
+@media (prefers-color-scheme: dark) {
+  .user-token-trigger:hover {
+    border-color: #8ec07c;
+    border: 1px solid #8ec07c;
+    border-radius: 5px;
+    /* gruvbox green */
+    /* background: rgba(142, 192, 124, 0.15); */
+  }
+}
+
 .button:hover {
   background-color: #359669
 }
@@ -312,7 +395,6 @@ a {
 }
 
 .user-button:hover {
-  transform: translateY(-2px);
   box-shadow: 0 10px 22px rgba(26, 38, 52, 0.10);
   background: #359669
 }
@@ -323,7 +405,6 @@ a {
 }
 
 .user-button:active {
-  transform: translateY(0);
   box-shadow: 0 6px 12px rgba(26, 38, 52, 0.08)
 }
 
@@ -334,4 +415,133 @@ a {
 .user-button .user-email {
   font-size: 0.85rem;
   color: rgba(255, 255, 255, 0.92)
+}
+
+.modal-open {
+  overflow: hidden;
+}
+
+.token-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(22, 27, 34, 0.6);
+  padding: 1.5rem;
+  z-index: 1000;
+}
+
+.token-modal[hidden] {
+  display: none;
+}
+
+.token-modal__dialog {
+  position: relative;
+  background: var(--token-modal-dialog-bg);
+  border-radius: var(--border-radius);
+  max-width: 560px;
+  width: 100%;
+  padding: 1.5rem;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.28);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+@media (prefers-color-scheme: dark) {
+  .token-modal__dialog {
+    background: #2d2d2d;
+    color: #ebdbb2;
+  }
+
+  .token-modal__json,
+  .token-modal__raw {
+    background: #1f1f1f;
+  }
+}
+
+.token-modal__close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  border: none;
+  background: transparent;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  color: inherit;
+}
+
+.token-modal__title {
+  margin: 0 0 0.25rem 0;
+}
+
+.token-modal__subtitle {
+  margin: 0 0 1rem 0;
+  color: #65737e;
+  font-size: 0.9rem;
+}
+
+.token-modal__json {
+  background: var(--token-modal-json-bg);
+  padding: 1rem;
+  border-radius: 6px;
+  max-height: 40vh;
+  overflow: auto;
+  font-size: 0.85rem;
+  line-height: normal;
+  color: var(--token-modal-text);
+}
+
+.token-modal__json-line {
+  display: inline;
+  white-space: pre;
+  line-height: 1;
+  margin: 0;
+  padding: 0;
+  color: inherit;
+}
+
+.timestamp-claim {
+  cursor: help;
+  border-bottom: 1px dotted currentColor;
+}
+
+.timestamp-claim:focus,
+.timestamp-claim:hover {
+  outline: none;
+  border-bottom-style: solid;
+}
+
+.token-modal__raw {
+  margin-top: 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  word-break: break-all;
+  background: var(--token-modal-raw-bg);
+  padding: 0.75rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: var(--token-modal-text);
+}
+
+.token-modal__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.token-modal__copy-status {
+  font-size: 0.85rem;
+  color: #357a38;
+}
+
+.token-modal__error {
+  margin-top: 1rem;
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  color: var(--error-text);
+  border-radius: 6px;
+  padding: 0.75rem;
+  font-size: 0.9rem;
 }

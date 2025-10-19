@@ -29,7 +29,7 @@
 
   <ul class="user-grid">
     {{range .Users}}
-    <li class="user-item">
+    <li class="user-item user-token-trigger" role="button" tabindex="0" data-email="{{.Email}}" data-name="{{.Name}}">
       <div class="user-avatar">{{.Initials}}</div>
       <div class="user-meta">
         <div class="user-name">{{.Name}}</div>
@@ -39,4 +39,231 @@
     {{end}}
   </ul>
 </div>
+
+<div class="token-modal" id="token-modal" hidden>
+  <div class="token-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="token-modal-title">
+    <button type="button" class="token-modal__close" aria-label="Close token details">×</button>
+    <h3 class="token-modal__title" id="token-modal-title">JWT details</h3>
+    <p class="token-modal__subtitle">Issued for <span id="token-modal-email"></span></p>
+    <pre class="token-modal__json" id="token-modal-json">Loading…</pre>
+    <div class="token-modal__raw" id="token-modal-raw"></div>
+    <div class="token-modal__actions">
+      <button type="button" class="button token-modal__copy" id="token-modal-copy">Copy token</button>
+      <span class="token-modal__copy-status" id="token-modal-copy-status" aria-live="polite"></span>
+    </div>
+    <div class="token-modal__error" id="token-modal-error" hidden></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const modal = document.getElementById('token-modal');
+  if (!modal) {
+    return;
+  }
+  const closeBtn = modal.querySelector('.token-modal__close');
+  const jsonBox = document.getElementById('token-modal-json');
+  const rawBox = document.getElementById('token-modal-raw');
+  const emailBox = document.getElementById('token-modal-email');
+  const errorBox = document.getElementById('token-modal-error');
+  const copyBtn = document.getElementById('token-modal-copy');
+  const copyStatus = document.getElementById('token-modal-copy-status');
+  const triggers = document.querySelectorAll('.user-token-trigger');
+
+  let currentToken = '';
+  let previousActive = null;
+
+  function openModal() {
+    modal.hidden = false;
+    document.body.classList.add('modal-open');
+    previousActive = document.activeElement;
+    closeBtn.focus();
+  }
+
+  function closeModal() {
+    modal.hidden = true;
+    document.body.classList.remove('modal-open');
+    currentToken = '';
+    jsonBox.textContent = '';
+    rawBox.textContent = '';
+    copyStatus.textContent = '';
+    errorBox.hidden = true;
+    if (previousActive && typeof previousActive.focus === 'function') {
+      previousActive.focus();
+    }
+  }
+
+  function showError(message) {
+    errorBox.hidden = false;
+    errorBox.textContent = message;
+    jsonBox.textContent = '';
+    rawBox.textContent = '';
+    copyBtn.disabled = true;
+  }
+
+  function clearError() {
+    errorBox.hidden = true;
+    errorBox.textContent = '';
+    copyBtn.disabled = false;
+  }
+
+  function formatTimestampTooltip(seconds) {
+    const num = Number(seconds);
+    if (!Number.isFinite(num)) {
+      return '';
+    }
+    const date = new Date(num * 1000);
+    if (Number.isNaN(date.getTime())) {
+      return '';
+    }
+    const utc = date.toUTCString();
+    const local = date.toLocaleString();
+    return utc + ' (local: ' + local + ')';
+  }
+
+  function renderClaims(claims) {
+    jsonBox.innerHTML = '';
+    let lines;
+    try {
+      lines = JSON.stringify(claims, null, 2).split('\n');
+    } catch (err) {
+      jsonBox.textContent = 'Failed to render claims';
+      return;
+    }
+    const timestampKeys = new Set(['exp', 'iat']);
+    lines.forEach(function (line, index) {
+      const lineSpan = document.createElement('span');
+      lineSpan.className = 'token-modal__json-line';
+      const match = line.match(/^(\s*)"([^\"]+)":\s*([^,]+)(,?)(.*)$/);
+      if (match && timestampKeys.has(match[2])) {
+        const value = match[3].trim();
+        const isNumeric = /^-?\d+(?:\.\d+)?$/.test(value);
+        if (isNumeric) {
+          const indent = match[1];
+          const key = match[2];
+          const trailing = match[4] || '';
+          const rest = match[5] || '';
+          lineSpan.append(document.createTextNode(indent + '"' + key + '": '));
+          const valueSpan = document.createElement('span');
+          valueSpan.textContent = value;
+          valueSpan.className = 'timestamp-claim';
+          const tooltip = formatTimestampTooltip(value);
+          if (tooltip) {
+            valueSpan.title = tooltip;
+            valueSpan.setAttribute('aria-label', tooltip);
+          }
+          lineSpan.append(valueSpan);
+          lineSpan.append(document.createTextNode(trailing + rest));
+        } else {
+          lineSpan.textContent = line;
+        }
+      } else {
+        lineSpan.textContent = line;
+      }
+      jsonBox.append(lineSpan);
+      if (index < lines.length - 1) {
+        jsonBox.append(document.createTextNode('\n'));
+      }
+    });
+  }
+
+  function fetchToken(email, name) {
+    jsonBox.textContent = 'Loading…';
+    rawBox.textContent = '';
+    copyStatus.textContent = '';
+    clearError();
+    copyBtn.disabled = true;
+    emailBox.textContent = name || email;
+    openModal();
+    fetch('/token/' + encodeURIComponent(email), {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json'
+      }
+    }).then(function (res) {
+      if (!res.ok) {
+        throw new Error('Request failed: ' + res.status);
+      }
+      return res.json();
+    }).then(function (data) {
+      currentToken = data.token || '';
+      const claims = data.claims || {};
+      renderClaims(claims);
+      rawBox.textContent = currentToken;
+      if (!currentToken) {
+        copyBtn.disabled = true;
+      } else {
+        copyBtn.disabled = false;
+      }
+    }).catch(function (err) {
+      showError(err.message || 'Failed to fetch token');
+    });
+  }
+
+  triggers.forEach(function (trigger) {
+    trigger.addEventListener('click', function () {
+      const email = trigger.getAttribute('data-email');
+      const name = trigger.getAttribute('data-name');
+      if (email) {
+        fetchToken(email, name);
+      }
+    });
+    trigger.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        trigger.click();
+      }
+    });
+  });
+
+  modal.addEventListener('click', function (event) {
+    if (event.target === modal) {
+      closeModal();
+    }
+  });
+
+  closeBtn.addEventListener('click', closeModal);
+
+  document.addEventListener('keydown', function (event) {
+    if (!modal.hidden && event.key === 'Escape') {
+      closeModal();
+    }
+  });
+
+  copyBtn.addEventListener('click', function () {
+    if (!currentToken) {
+      return;
+    }
+    const writePromise = navigator.clipboard && navigator.clipboard.writeText
+      ? navigator.clipboard.writeText(currentToken)
+      : Promise.reject(new Error('Clipboard API not available'));
+
+    writePromise.then(function () {
+      copyStatus.textContent = 'Copied!';
+      setTimeout(function () {
+        copyStatus.textContent = '';
+      }, 2000);
+    }).catch(function () {
+      copyStatus.textContent = '';
+      try {
+        const helper = document.createElement('textarea');
+        helper.value = currentToken;
+        helper.setAttribute('readonly', '');
+        helper.style.position = 'absolute';
+        helper.style.left = '-9999px';
+        document.body.appendChild(helper);
+        helper.select();
+        document.execCommand('copy');
+        document.body.removeChild(helper);
+        copyStatus.textContent = 'Copied!';
+        setTimeout(function () {
+          copyStatus.textContent = '';
+        }, 2000);
+      } catch (copyErr) {
+        copyStatus.textContent = 'Copy failed';
+      }
+    });
+  });
+})();
+</script>
 {{end}}

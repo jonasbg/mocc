@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"log"
@@ -20,6 +21,7 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 func TestMain(m *testing.M) {
@@ -150,6 +152,112 @@ func TestPKCE_WrongVerifier(t *testing.T) {
 	w := doToken(t, s.Engine, code, clientID, "wrong-verifier")
 	if w.Code == 200 {
 		t.Fatalf("expected token exchange to fail with wrong verifier")
+	}
+}
+
+func TestTokenByEmail(t *testing.T) {
+	users := []config.User{{Name: "Alice", Email: "alice@example.com"}}
+	ks := oidc.GenerateKeySet()
+	s := New(users, ks)
+
+	req := httptest.NewRequest("GET", "/token/alice@example.com", nil)
+	w := httptest.NewRecorder()
+	s.Engine.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", w.Code)
+	}
+
+	var resp struct {
+		Token  string                 `json:"token"`
+		Claims map[string]interface{} `json:"claims"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Token == "" {
+		t.Fatal("expected token in response")
+	}
+	if resp.Claims["email"] != users[0].Email {
+		t.Fatalf("expected email claim %q, got %v", users[0].Email, resp.Claims["email"])
+	}
+
+	parsed, err := jwt.Parse(resp.Token, func(token *jwt.Token) (interface{}, error) {
+		return ks.Public, nil
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()}))
+	if err != nil {
+		t.Fatalf("failed to parse token: %v", err)
+	}
+	if !parsed.Valid {
+		t.Fatal("expected token to be valid")
+	}
+	claims, ok := parsed.Claims.(jwt.MapClaims)
+	if !ok {
+		t.Fatalf("unexpected claims type %T", parsed.Claims)
+	}
+	if claims["email"] != users[0].Email {
+		t.Fatalf("expected email claim %q, got %v", users[0].Email, claims["email"])
+	}
+}
+
+func TestTokenByEmailWithExtras(t *testing.T) {
+	users := []config.User{{Name: "Alice", Email: "alice@example.com"}}
+	ks := oidc.GenerateKeySet()
+	s := New(users, ks)
+
+	body := bytes.NewBufferString(`{"aud":"my-client","custom":"value"}`)
+	req := httptest.NewRequest("GET", "/token/alice@example.com", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.Engine.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", w.Code)
+	}
+
+	var resp struct {
+		Token  string                 `json:"token"`
+		Claims map[string]interface{} `json:"claims"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Claims["aud"] != "my-client" {
+		t.Fatalf("expected aud claim 'my-client', got %v", resp.Claims["aud"])
+	}
+	if resp.Claims["custom"] != "value" {
+		t.Fatalf("expected custom claim 'value', got %v", resp.Claims["custom"])
+	}
+
+	parsed, err := jwt.Parse(resp.Token, func(token *jwt.Token) (interface{}, error) {
+		return ks.Public, nil
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()}))
+	if err != nil {
+		t.Fatalf("failed to parse token: %v", err)
+	}
+	claims, ok := parsed.Claims.(jwt.MapClaims)
+	if !ok {
+		t.Fatalf("unexpected claims type %T", parsed.Claims)
+	}
+	if claims["aud"] != "my-client" {
+		t.Fatalf("expected aud claim 'my-client', got %v", claims["aud"])
+	}
+	if claims["custom"] != "value" {
+		t.Fatalf("expected custom claim 'value', got %v", claims["custom"])
+	}
+}
+
+func TestTokenByEmailUnknownUser(t *testing.T) {
+	users := []config.User{{Name: "Alice", Email: "alice@example.com"}}
+	ks := oidc.GenerateKeySet()
+	s := New(users, ks)
+
+	req := httptest.NewRequest("GET", "/token/bob@example.com", nil)
+	w := httptest.NewRecorder()
+	s.Engine.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for unknown user, got %d", w.Code)
 	}
 }
 
