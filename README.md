@@ -61,7 +61,7 @@ Or run the compiled binary:
 
 ```bash
 ./mocc --help
-./mocc --users ./config/users.yaml --port 8080
+./mocc --users ./config/users.yaml --port 9999
 ```
 
 Cross-compile the same binaries produced by CI:
@@ -104,7 +104,7 @@ docker run --rm -p 9999:9999 -v $(pwd)/users.yaml:/config/users.yaml mocc:latest
 docker run --rm -p 9999:9999 -v $(pwd)/config:/config mocc:latest
 ```
 
-Configuration precedence is command-line flags, then environment variables, then defaults. Flags are available even in the container (`docker run ... mocc --port 8080`).
+Configuration precedence is command-line flags, then environment variables, then defaults. Flags are available even in the container (`docker run ... mocc --port 9999`).
 
 Flags:
 
