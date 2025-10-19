@@ -65,14 +65,14 @@ func parseOptions() options {
 		port:      defaultPort,
 	}
 
-	if val := firstNonEmpty(os.Getenv("TINYGOIDC_USERS"), os.Getenv("USERS")); val != "" {
+	if val := firstNonEmpty(os.Getenv("MOCC_USERS"), os.Getenv("USERS")); val != "" {
 		opts.usersPath = val
 		opts.usersFromEnv = true
 	}
-	if val := firstNonEmpty(os.Getenv("TINYGOIDC_HOST"), os.Getenv("HOST")); val != "" {
+	if val := firstNonEmpty(os.Getenv("MOCC_HOST"), os.Getenv("HOST")); val != "" {
 		opts.host = val
 	}
-	if val := firstNonEmpty(os.Getenv("TINYGOIDC_PORT"), os.Getenv("PORT")); val != "" {
+	if val := firstNonEmpty(os.Getenv("MOCC_PORT"), os.Getenv("PORT")); val != "" {
 		opts.port = val
 	}
 
@@ -84,9 +84,9 @@ func parseOptions() options {
 		fmt.Fprintln(out, "Configuration precedence: flags > environment variables > defaults.")
 		fmt.Fprintln(out)
 		fmt.Fprintln(out, "Environment variables:")
-		fmt.Fprintln(out, "  TINYGOIDC_USERS, USERS — path to users YAML (default: users.yaml)")
-		fmt.Fprintln(out, "  TINYGOIDC_HOST, HOST   — address to bind (default: 0.0.0.0)")
-		fmt.Fprintln(out, "  TINYGOIDC_PORT, PORT   — port to bind (default: 9999)")
+		fmt.Fprintln(out, "  MOCC_USERS, USERS — path to users YAML (default: users.yaml)")
+		fmt.Fprintln(out, "  MOCC_HOST, HOST   — address to bind (default: 0.0.0.0)")
+		fmt.Fprintln(out, "  MOCC_PORT, PORT   — port to bind (default: 9999)")
 		fmt.Fprintln(out)
 		flagSet.PrintDefaults()
 	}
@@ -141,9 +141,9 @@ func printBanner(host, port string) {
 	fmt.Printf("MOCC ready at http://%s:%s — happy moccing!\n", displayHost, port)
 	fmt.Println()
 	fmt.Println("Quick tips:")
-	fmt.Println("  • --users <path>    override the bundled users list (env: TINYGOIDC_USERS / USERS)")
-	fmt.Println("  • --host <address>  change bind address (env: TINYGOIDC_HOST / HOST)")
-	fmt.Println("  • --port <port>     pick a different port (env: TINYGOIDC_PORT / PORT)")
+	fmt.Println("  • --users <path>    override the bundled users list (env: MOCC_USERS / USERS)")
+	fmt.Println("  • --host <address>  change bind address (env: MOCC_HOST / HOST)")
+	fmt.Println("  • --port <port>     pick a different port (env: MOCC_PORT / PORT)")
 	fmt.Println("  • Flags win over env vars; env vars win over built-in defaults.")
 	fmt.Println()
 	fmt.Println("Docs & updates: https://github.com/jonasbg/mocc")

@@ -9,11 +9,11 @@ import (
 )
 
 func TestParseOptionsDefaults(t *testing.T) {
-	t.Setenv("TINYGOIDC_USERS", "")
+	t.Setenv("MOCC_USERS", "")
 	t.Setenv("USERS", "")
-	t.Setenv("TINYGOIDC_HOST", "")
+	t.Setenv("MOCC_HOST", "")
 	t.Setenv("HOST", "")
-	t.Setenv("TINYGOIDC_PORT", "")
+	t.Setenv("MOCC_PORT", "")
 	t.Setenv("PORT", "")
 
 	origArgs := os.Args
@@ -39,9 +39,9 @@ func TestParseOptionsDefaults(t *testing.T) {
 }
 
 func TestParseOptionsEnvAndFlags(t *testing.T) {
-	t.Setenv("TINYGOIDC_USERS", "/env/users.yaml")
-	t.Setenv("TINYGOIDC_HOST", "127.0.0.1")
-	t.Setenv("TINYGOIDC_PORT", "7777")
+	t.Setenv("MOCC_USERS", "/env/users.yaml")
+	t.Setenv("MOCC_HOST", "127.0.0.1")
+	t.Setenv("MOCC_PORT", "7777")
 
 	origArgs := os.Args
 	defer func() { os.Args = origArgs }()
