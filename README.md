@@ -110,6 +110,19 @@ docker run --rm -p 9999:9999 -v $(pwd)/config:/config mocc:latest
 
 Configuration precedence is command-line flags, then environment variables, then defaults. Flags are available even in the container (`docker run ... mocc --port 9999`).
 
+Each user entry may also define a `claims` map. Any custom claim values you include there (nested objects and arrays are allowed) automatically flow into issued tokens:
+
+```yaml
+users:
+  - name: "Alice Admin"
+    email: "alice.admin@test.local"
+    claims:
+      roles: ["admin", "tester"]
+      tenant: "acme"
+      features:
+        beta: true
+```
+
 Flags:
 
 - `--users` — path to the users YAML file (default: `users.yaml`)

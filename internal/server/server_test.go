@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"syscall"
 	"testing"
@@ -18,7 +19,6 @@ import (
 
 	"mocc/internal/config"
 	"mocc/internal/oidc"
-	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -155,8 +155,71 @@ func TestPKCE_WrongVerifier(t *testing.T) {
 	}
 }
 
+func TestTokenIncludesUserClaims(t *testing.T) {
+	users := []config.User{{
+		Name:   "Alice",
+		Email:  "alice@example.com",
+		Claims: map[string]interface{}{"role": "admin", "profile": map[string]interface{}{"tier": "gold"}},
+	}}
+	ks := oidc.GenerateKeySet()
+	s := New(users, ks)
+
+	clientID := "test-client"
+	redirectURI := "http://localhost/cb"
+	verifier := "test-verifier-abc"
+	h := sha256.Sum256([]byte(verifier))
+	challenge := base64.RawURLEncoding.EncodeToString(h[:])
+
+	code := doAuthorize(t, s.Engine, users, clientID, redirectURI, challenge, "S256")
+	if code == "" {
+		t.Fatalf("no code returned from authorize")
+	}
+
+	w := doToken(t, s.Engine, code, clientID, verifier)
+	if w.Code != 200 {
+		body, _ := io.ReadAll(w.Body)
+		t.Fatalf("token exchange failed: %d %s", w.Code, string(body))
+	}
+
+	var resp struct {
+		AccessToken string `json:"access_token"`
+		IDToken     string `json:"id_token"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.IDToken == "" {
+		t.Fatal("expected id_token in response")
+	}
+
+	parsed, err := jwt.Parse(resp.IDToken, func(token *jwt.Token) (interface{}, error) {
+		return ks.Public, nil
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()}))
+	if err != nil {
+		t.Fatalf("failed to parse token: %v", err)
+	}
+	claims, ok := parsed.Claims.(jwt.MapClaims)
+	if !ok {
+		t.Fatalf("unexpected claims type %T", parsed.Claims)
+	}
+	if claims["role"] != "admin" {
+		t.Fatalf("expected role claim 'admin', got %v", claims["role"])
+	}
+	profileClaim, ok := claims["profile"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected profile claim to be an object, got %T", claims["profile"])
+	}
+	if profileClaim["tier"] != "gold" {
+		t.Fatalf("expected profile.tier 'gold', got %v", profileClaim["tier"])
+	}
+}
+
 func TestTokenByEmail(t *testing.T) {
-	users := []config.User{{Name: "Alice", Email: "alice@example.com"}}
+	users := []config.User{{
+		Name:   "Alice",
+		Email:  "alice@example.com",
+		Claims: map[string]interface{}{"role": "tester", "profile": map[string]interface{}{"env": "dev"}},
+	}}
 	ks := oidc.GenerateKeySet()
 	s := New(users, ks)
 
@@ -181,6 +244,16 @@ func TestTokenByEmail(t *testing.T) {
 	if resp.Claims["email"] != users[0].Email {
 		t.Fatalf("expected email claim %q, got %v", users[0].Email, resp.Claims["email"])
 	}
+	if resp.Claims["role"] != "tester" {
+		t.Fatalf("expected role claim 'tester', got %v", resp.Claims["role"])
+	}
+	profile, ok := resp.Claims["profile"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected profile claim to be an object, got %T", resp.Claims["profile"])
+	}
+	if profile["env"] != "dev" {
+		t.Fatalf("expected profile.env 'dev', got %v", profile["env"])
+	}
 
 	parsed, err := jwt.Parse(resp.Token, func(token *jwt.Token) (interface{}, error) {
 		return ks.Public, nil
@@ -198,10 +271,24 @@ func TestTokenByEmail(t *testing.T) {
 	if claims["email"] != users[0].Email {
 		t.Fatalf("expected email claim %q, got %v", users[0].Email, claims["email"])
 	}
+	if claims["role"] != "tester" {
+		t.Fatalf("expected role claim 'tester', got %v", claims["role"])
+	}
+	profileClaim, ok := claims["profile"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected profile claim to be an object, got %T", claims["profile"])
+	}
+	if profileClaim["env"] != "dev" {
+		t.Fatalf("expected profile.env 'dev', got %v", profileClaim["env"])
+	}
 }
 
 func TestTokenByEmailWithExtras(t *testing.T) {
-	users := []config.User{{Name: "Alice", Email: "alice@example.com"}}
+	users := []config.User{{
+		Name:   "Alice",
+		Email:  "alice@example.com",
+		Claims: map[string]interface{}{"role": "tester", "feature": "baseline"},
+	}}
 	ks := oidc.GenerateKeySet()
 	s := New(users, ks)
 
@@ -228,6 +315,9 @@ func TestTokenByEmailWithExtras(t *testing.T) {
 	if resp.Claims["custom"] != "value" {
 		t.Fatalf("expected custom claim 'value', got %v", resp.Claims["custom"])
 	}
+	if resp.Claims["feature"] != "baseline" {
+		t.Fatalf("expected feature claim 'baseline', got %v", resp.Claims["feature"])
+	}
 
 	parsed, err := jwt.Parse(resp.Token, func(token *jwt.Token) (interface{}, error) {
 		return ks.Public, nil
@@ -244,6 +334,9 @@ func TestTokenByEmailWithExtras(t *testing.T) {
 	}
 	if claims["custom"] != "value" {
 		t.Fatalf("expected custom claim 'value', got %v", claims["custom"])
+	}
+	if claims["feature"] != "baseline" {
+		t.Fatalf("expected feature claim 'baseline', got %v", claims["feature"])
 	}
 }
 

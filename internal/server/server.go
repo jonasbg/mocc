@@ -21,8 +21,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
+    "github.com/gin-gonic/gin"
+    "github.com/golang-jwt/jwt/v5"
 
 	"mocc/internal/config"
 	"mocc/internal/oidc"
@@ -253,7 +253,11 @@ func (s *Server) handleToken(c *gin.Context) {
 		}
 	}
 	issuer := fmt.Sprintf("http://%s", c.Request.Host)
-	claims := jwt.MapClaims{"sub": auth.User.Email, "email": auth.User.Email, "name": auth.User.Name, "iss": issuer, "aud": clientID}
+	claims := jwt.MapClaims{"sub": auth.User.Sub, "email": auth.User.Email, "iss": issuer, "aud": clientID}
+	if auth.User.Name != "" {
+		claims["name"] = auth.User.Name
+	}
+	applyExtraClaims(claims, auth.User.Claims)
 	token, err := s.Keys.SignIDToken(claims)
 	if err != nil {
 		c.String(500, "Failed to sign token")
@@ -289,6 +293,7 @@ func (s *Server) handleTokenByEmail(c *gin.Context) {
 	if selected.Name != "" {
 		claims["name"] = selected.Name
 	}
+	applyExtraClaims(claims, selected.Claims)
 	if c.Request.Body != nil {
 		body, err := io.ReadAll(c.Request.Body)
 		if err != nil {
@@ -301,9 +306,7 @@ func (s *Server) handleTokenByEmail(c *gin.Context) {
 				c.String(400, "Invalid JSON body")
 				return
 			}
-			for k, v := range extras {
-				claims[k] = v
-			}
+			applyExtraClaims(claims, extras)
 		}
 	}
 	token, err := s.Keys.SignIDToken(claims)
@@ -337,6 +340,15 @@ func (s *Server) handleDiscovery(c *gin.Context) {
 
 // helper small wrappers to avoid extra imports in this patch
 func stringsToUpper(s string) string { return strings.ToUpper(s) }
+
+func applyExtraClaims(dst jwt.MapClaims, extras map[string]interface{}) {
+	if len(extras) == 0 || extras == nil {
+		return
+	}
+	for k, v := range extras {
+		dst[k] = v
+	}
+}
 
 func requestLogger() gin.HandlerFunc {
 	interestingKeys := []string{

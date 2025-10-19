@@ -1,6 +1,11 @@
 users:
   - name: "Alice Admin"
     email: "alice.admin@test.local"
+    claims:
+      roles: ["admin", "tester"]
+      tenant: "acme"
+      features:
+        beta: true
   - name: "Bob Viewer"
     email: "bob.viewer@test.local"
   - name: "Charlie Visitor"

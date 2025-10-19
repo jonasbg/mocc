@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 
@@ -13,6 +14,7 @@ type User struct {
 	Name     string `yaml:"name"`
 	Email    string `yaml:"email"`
 	Initials string `yaml:"-"`
+	Claims   map[string]interface{} `yaml:"claims"`
 }
 
 type Config struct {
@@ -50,6 +52,7 @@ func parseUsers(data []byte) ([]User, error) {
 		// compute initials
 		name := cfg.Users[i].Name
 		cfg.Users[i].Initials = initials(name)
+		cfg.Users[i].Claims = normalizeClaims(cfg.Users[i].Claims)
 	}
 	return cfg.Users, nil
 }
@@ -81,4 +84,40 @@ func initials(name string) string {
 		return strings.ToUpper(string(r[0]))
 	}
 	return strings.ToUpper(firstRune(parts[0]) + firstRune(parts[len(parts)-1]))
+}
+
+func normalizeClaims(input map[string]interface{}) map[string]interface{} {
+	if input == nil {
+		return nil
+	}
+	out := make(map[string]interface{}, len(input))
+	for k, v := range input {
+		out[k] = normalizeValue(v)
+	}
+	return out
+}
+
+func normalizeValue(v interface{}) interface{} {
+	switch val := v.(type) {
+	case map[string]interface{}:
+		res := make(map[string]interface{}, len(val))
+		for k, inner := range val {
+			res[k] = normalizeValue(inner)
+		}
+		return res
+	case map[interface{}]interface{}:
+		res := make(map[string]interface{}, len(val))
+		for k, inner := range val {
+			key := fmt.Sprintf("%v", k)
+			res[key] = normalizeValue(inner)
+		}
+		return res
+	case []interface{}:
+		for i := range val {
+			val[i] = normalizeValue(val[i])
+		}
+		return val
+	default:
+		return v
+	}
 }
