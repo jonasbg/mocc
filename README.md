@@ -135,6 +135,7 @@ Login page
 
 - Authorization endpoint: /authorize
 - Token endpoint: /token
+- Direct token minting: /token/{email}
 - JWKS endpoint: /jwks.json
 - Discovery: /.well-known/openid-configuration
 
@@ -162,6 +163,46 @@ code=<code>&client_id=your-client&code_verifier=<the-original-verifier>
 ```
 
 If you use `plain` as `code_challenge_method`, the server will accept it but will log a warning advising to use S256 instead.
+
+## Direct token minting
+
+For quick manual testing, you can mint a token for a known user without running the full authorization flow. Call `GET /token/{email}` with the target email from `users.yaml`. You can optionally include a JSON body containing extra claims you want to override or add.
+
+```bash
+curl \
+  -X GET "http://localhost:9999/token/alice@example.com" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "aud": "my-client-id",
+        "roles": ["tester", "admin"],
+        "custom": {
+          "featureFlags": ["alpha", "beta"]
+        }
+      }'
+```
+
+Response (trimmed):
+
+```json
+{
+  "token": "<RS256 signed JWT>",
+  "claims": {
+    "sub": "alice@example.com",
+    "email": "alice@example.com",
+    "name": "Alice Example",
+    "iss": "http://localhost:9999",
+    "aud": "my-client-id",
+    "roles": ["tester", "admin"],
+    "custom": {
+      "featureFlags": ["alpha", "beta"]
+    },
+    "iat": 1711986320,
+    "exp": 1711986620
+  }
+}
+```
+
+The `claims` object mirrors the payload embedded in the signed JWT and reflects any custom values supplied in the request body.
 
 ## License
 
