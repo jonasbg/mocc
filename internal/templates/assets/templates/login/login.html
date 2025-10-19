@@ -1,0 +1,31 @@
+{{template "layout.html" .}}
+
+{{define "title"}}Login - Gotiny OIDC Mock{{end}}
+
+{{define "content"}}
+<h1>Select User to Login</h1>
+<p class="login-description">Please select a user from the list below to log in. This will simulate an authentication
+  flow for testing purposes.</p>
+<form method="POST" action="/authorize" class="card">
+  <input type="hidden" name="client_id" value="{{.ClientID}}">
+  <input type="hidden" name="redirect_uri" value="{{.RedirectURI}}">
+  <input type="hidden" name="state" value="{{.State}}">
+  <input type="hidden" name="nonce" value="{{.Nonce}}">
+  <input type="hidden" name="code_challenge" value="{{.CodeChallenge}}">
+  <input type="hidden" name="code_challenge_method" value="{{.CodeChallengeMethod}}">
+
+  <ul class="user-grid">
+    {{range .Users}}
+    <li>
+      <button type="submit" name="sub" value="{{.Email}}" class="user-button">
+        <div class="user-meta">
+          <div class="user-name">{{.Name}}</div>
+          <div class="user-email">{{.Email}}</div>
+        </div>
+      </button>
+    </li>
+    {{end}}
+  </ul>
+
+</form>
+{{end}}

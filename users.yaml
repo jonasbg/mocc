@@ -1,0 +1,13 @@
+users:
+  - name: "Alice Admin"
+    email: "alice.admin@test.local"
+  - name: "Bob Viewer"
+    email: "bob.viewer@test.local"
+  - name: "Charlie Visitor"
+    email: "charlie.visitor@test.local"
+  - name: "Diana External"
+    email: "diana.external@test.local"
+  - name: "Eve Visitor"
+    email: "eve.visitor@test.local"
+  - name: "Frank Viewer"
+    email: "frank.viewer@test.local"

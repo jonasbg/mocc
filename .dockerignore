@@ -1,0 +1,6 @@
+static/landing.png
+static/login.png
+.devcontainer/*
+.github/*
+README.md
+main_test.go

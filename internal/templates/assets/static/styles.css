@@ -1,0 +1,337 @@
+:root {
+  --primary-green: #40b87b;
+  --dark-text: #1a2634;
+  --light-gray: #f5f6f7;
+  --border-radius: 8px;
+  --error-bg: #fef2f2;
+  --error-border: #fee2e2;
+  --error-text: #991b1b;
+  --error-icon: #dc2626;
+  --success-bg: #f0fdf4;
+  --success-border: #dcfce7;
+  --success-text: #166534;
+  --success-icon: #16a34a;
+  font-family: 'Manrope', 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+  /* Load Manrope locally */
+  font-family: 'Manrope', 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+}
+
+@font-face {
+  font-family: 'Manrope';
+  src: url('/static/manrope-regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  color: var(--dark-text);
+  background: linear-gradient(180deg, #ffffff 0%, #fbfbfc 100%);
+}
+
+.container {
+  max-width: 900px;
+  margin: 3rem auto;
+  padding: 1.5rem;
+}
+
+.card {
+  background: white;
+  border-radius: var(--border-radius);
+  box-shadow: 0 6px 18px rgba(26, 38, 52, 0.06);
+  padding: 1rem 1.25rem;
+  margin-top: 1rem;
+}
+
+/* Hero/header styles */
+/* Hero/header styles */
+.hero {
+  display: block;
+  padding: 1.25rem;
+}
+
+/* Dark theme: respects system preference */
+@media (prefers-color-scheme: dark) {
+
+  html,
+  body {
+    background: #282828 !important;
+    /* gruvbox dark0_hard */
+    color: #ebdbb2 !important;
+    /* gruvbox light1 */
+  }
+
+  a {
+    color: #b8bb26;
+    /* gruvbox green */
+  }
+
+  header,
+  nav,
+  footer {
+    background-color: #3c3836;
+    color: #ebdbb2;
+  }
+
+  input,
+  textarea,
+  select,
+  button {
+    background-color: #3c3836;
+    color: #ebdbb2;
+    border-color: #504945;
+  }
+
+  .card,
+  .panel,
+  .box {
+    background-color: #32302f;
+    color: #ebdbb2;
+    border-color: #504945;
+  }
+
+  ::selection {
+    background: #458588;
+    color: #fbf1c7;
+  }
+
+  /* Add more selectors as needed for your UI */
+}
+
+body {
+  background-color: #181a1b;
+  color: #222;
+}
+
+a {
+  color: #8ab4f8;
+}
+
+header,
+nav,
+footer {
+  background-color: #23272a;
+  color: #e8e6e3;
+}
+
+input,
+textarea,
+select,
+button {
+  background-color: #23272a;
+  color: #e8e6e3;
+  border-color: #444;
+}
+
+
+
+.logo {
+  width: 72px;
+  height: 92px;
+  object-fit: contain;
+  border-radius: 12px;
+  box-shadow: 0 8px 22px rgba(26, 38, 52, 0.08);
+}
+
+.page-title {
+  margin: 0;
+  font-size: 1.6rem;
+  color: var(--primary-green);
+}
+
+.lead {
+  margin: 0.25rem 0 0 0;
+  color: #516268;
+}
+
+h1 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.5rem;
+}
+
+h3 {
+  margin-top: 0
+}
+
+.user-list {
+  list-style: none;
+  padding: 0;
+  margin: 0
+}
+
+.user-item {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem;
+  border-radius: 10px;
+  transition: background 0.12s, transform 0.06s;
+  margin-bottom: 0.6rem;
+  border: 1px solid rgba(26, 38, 52, 0.04);
+  background: linear-gradient(180deg, #ffffff 0%, #fcfffb 100%);
+}
+
+/* When used inside the grid, make each user-item a card-like block */
+.user-grid .user-item {
+  /* flat, list-like grid item - no card visuals */
+  flex-direction: row;
+  align-items: center;
+  padding: 0.45rem 0.5rem;
+  height: auto;
+  margin-bottom: 0;
+  border-radius: 0;
+  box-shadow: none;
+  border: none;
+  background: transparent;
+}
+
+.user-grid .user-meta {
+  display: flex;
+  flex-direction: column;
+}
+
+.user-grid .user-name {
+  font-size: 1rem;
+}
+
+.user-grid .user-email {
+  font-size: 0.85rem;
+  color: #4b5b61;
+}
+
+.user-item:hover {
+  background: transparent;
+}
+
+.user-item input {
+  margin-right: 0.75rem
+}
+
+.user-meta {
+  display: inline-block
+}
+
+.user-name {
+  font-weight: 600
+}
+
+.user-email {
+  font-size: 0.9rem;
+  color: #5b6b73
+}
+
+.user-avatar {
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: white;
+  background: linear-gradient(180deg, var(--primary-green) 0%, #2f9a66 100%);
+  margin-right: 0.9rem;
+  font-size: 0.95rem;
+  box-shadow: 0 8px 18px rgba(26, 38, 52, 0.06);
+}
+
+.user-actions {
+  margin-left: auto;
+}
+
+
+
+.user-item .button {
+  padding: 0.45rem 0.9rem;
+  font-size: 0.92rem;
+  border-radius: 8px;
+}
+
+.actions {
+  margin-top: 1rem
+}
+
+.button {
+  background-color: var(--primary-green);
+  color: white;
+  border: none;
+  border-radius: var(--border-radius);
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  font-weight: 500;
+}
+
+.button:hover {
+  background-color: #359669
+}
+
+.button:disabled {
+  background-color: #e0e0e0;
+  cursor: not-allowed
+}
+
+a {
+  color: var(--primary-green);
+  text-decoration: none
+}
+
+/* New styles for index user buttons */
+.user-grid {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+
+.user-grid li {
+  list-style: none
+}
+
+.user-button-form {
+  margin: 0
+}
+
+.user-button {
+  width: 100%;
+  text-align: left;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--primary-green);
+  color: white;
+  cursor: pointer;
+  box-shadow: 0 6px 14px rgba(26, 38, 52, 0.08);
+  transition: transform 0.06s ease, box-shadow 0.06s ease, background 0.12s;
+}
+
+.user-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 22px rgba(26, 38, 52, 0.10);
+  background: #359669
+}
+
+.user-button:focus {
+  outline: 3px solid rgba(64, 184, 123, 0.22);
+  outline-offset: 2px
+}
+
+.user-button:active {
+  transform: translateY(0);
+  box-shadow: 0 6px 12px rgba(26, 38, 52, 0.08)
+}
+
+.user-button .user-name {
+  font-weight: 700
+}
+
+.user-button .user-email {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.92)
+}
