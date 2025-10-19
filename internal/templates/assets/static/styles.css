@@ -200,21 +200,36 @@ h3 {
   background: transparent;
 }
 
-.user-token-trigger {
-  cursor: pointer;
-  border-radius: 8px;
+.user-token-trigger,
+.login-user-button {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  background: transparent;
   border: 1px solid transparent;
-  transition: background 0.12s ease, box-shadow 0.12s ease, transform 0.06s ease;
+  border-radius: 8px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    transform 0.06s ease;
 }
 
-.user-token-trigger:focus-visible {
+.user-token-trigger:hover,
+.login-user-button:hover {
+  background: rgba(64, 184, 123, 0.1);
+  border-color: var(--primary-green);
+}
+
+.user-token-trigger:focus-visible,
+.login-user-button:focus-visible {
   outline: 3px solid rgba(64, 184, 123, 0.45);
   outline-offset: 2px;
-}
-
-.user-token-trigger:hover {
-  background: rgba(64, 184, 123, 0.1);
-  /* box-shadow: 0 6px 14px rgba(26, 38, 52, 0.08); */
 }
 
 .login-card {
@@ -239,32 +254,21 @@ h3 {
   padding: 0;
 }
 
-.login-user-button {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  width: 100%;
-  padding: 0.45rem 0.6rem;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  color: inherit;
-  text-align: left;
+.user-token-trigger {
   cursor: pointer;
-  font: inherit;
-  transition: background 0.12s ease, box-shadow 0.12s ease, transform 0.06s ease;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition:
+    background 0.12s ease,
+    box-shadow 0.12s ease,
+    border-color 0.12s ease,
+    transform 0.06s ease;
 }
 
-.login-user-button:focus {
-  outline: none;
-}
-
-.login-user-button .user-name {
-  color: inherit;
-}
-
-.login-user-button .user-email {
-  color: #4b5b61;
+.user-token-trigger:hover {
+  background: rgba(64, 184, 123, 0.1);
+  border-color: var(--primary-green);
+  box-shadow: 0 6px 14px rgba(26, 38, 52, 0.08);
 }
 
 .login-hint {

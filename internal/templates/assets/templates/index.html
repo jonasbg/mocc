@@ -29,12 +29,14 @@
 
   <ul class="user-grid">
     {{range .Users}}
-    <li class="user-item user-token-trigger" role="button" tabindex="0" data-email="{{.Email}}" data-name="{{.Name}}">
-      <div class="user-avatar">{{.Initials}}</div>
-      <div class="user-meta">
-        <div class="user-name">{{.Name}}</div>
-        <div class="user-email">{{.Email}}</div>
-      </div>
+    <li class="user-item">
+      <button type="button" class="user-token-trigger login-user-button" data-email="{{.Email}}" data-name="{{.Name}}">
+        <div class="user-avatar">{{.Initials}}</div>
+        <div class="user-meta">
+          <div class="user-name">{{.Name}}</div>
+          <div class="user-email">{{.Email}}</div>
+        </div>
+      </button>
     </li>
     {{end}}
   </ul>
