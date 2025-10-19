@@ -5,6 +5,10 @@
   <a href="#overview">About</a> •
   <a href="#get-started">Get Started</a> •
   <a href="#configuration">Config</a>
+
+<br />
+
+  [![Build Release Binaries](https://github.com/jonasbg/mocc/actions/workflows/release-binaries.yml/badge.svg)](https://github.com/jonasbg/mocc/actions/workflows/release-binaries.yml)
 </div>
 
 ## Overview
