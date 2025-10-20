@@ -503,38 +503,42 @@ func colorForStatus(status int) string {
 }
 
 func requestLogger() gin.HandlerFunc {
-	interestingKeys := []string{
-		"response_type",
-		"client_id",
-		"redirect_uri",
-		"scope",
-		"state",
-		"nonce",
-		"code_challenge",
-		"code_challenge_method",
-		"grant_type",
-		"code",
-		"code_verifier",
-	}
-
 	return func(c *gin.Context) {
+		// Only log OIDC-specific calls, ignore specified prefixes
+		path := c.Request.URL.Path
+		ignorePrefixes := []string{"/static/", "/favicon"}
+		if path == "/" {
+			return
+		}
+		for _, prefix := range ignorePrefixes {
+			if strings.HasPrefix(path, prefix) {
+				return
+			}
+		}
 		c.Next()
 
 		method := c.Request.Method
-		path := c.Request.URL.Path
 		status := c.Writer.Status()
+		details := make([]string, 0)
 
-		details := make([]string, 0, len(interestingKeys)+1)
-		for _, key := range interestingKeys {
-			if val := c.Query(key); val != "" {
-				details = append(details, formatDetail(key, truncateDisplay(val, 60)))
-				continue
-			}
-			if val := c.PostForm(key); val != "" {
+		// Log all query parameters
+		for key, values := range c.Request.URL.Query() {
+			for _, val := range values {
 				details = append(details, formatDetail(key, truncateDisplay(val, 60)))
 			}
 		}
 
+		// Log all form parameters
+		if c.Request.Method == "POST" {
+			c.Request.ParseForm()
+			for key, values := range c.Request.PostForm {
+				for _, val := range values {
+					details = append(details, formatDetail(key, truncateDisplay(val, 60)))
+				}
+			}
+		}
+
+		// Log Location header if present
 		if loc := c.Writer.Header().Get("Location"); loc != "" {
 			details = append(details, formatDetail("location", truncateDisplay(loc, 80)))
 		}
