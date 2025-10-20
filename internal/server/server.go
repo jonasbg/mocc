@@ -114,6 +114,7 @@ func New(users []config.User, keys *oidc.KeySet) *Server {
 	r.POST("/token", s.handleToken)
 	r.GET("/token/:email", s.handleTokenByEmail)
 	r.GET("/login", s.handleLoginRedirect)
+	r.GET("/callback", s.handleCallback)
 	r.GET("/jwks.json", s.handleJWKS)
 	r.GET("/userinfo", s.handleUserInfo)
 	r.GET("/.well-known/openid-configuration", s.handleDiscovery)
@@ -127,6 +128,25 @@ func New(users []config.User, keys *oidc.KeySet) *Server {
 func (s *Server) handleLoginRedirect(c *gin.Context) {
 	u := url.URL{Path: "/authorize", RawQuery: c.Request.URL.RawQuery}
 	c.Redirect(302, u.String())
+}
+
+func (s *Server) handleCallback(c *gin.Context) {
+	t := s.Templates["callback.html"]
+	if t == nil {
+		c.String(500, "template not found")
+		return
+	}
+	data := gin.H{
+		"Code":        c.Query("code"),
+		"State":       c.Query("state"),
+		"IDToken":     c.Query("id_token"),
+		"AccessToken": c.Query("access_token"),
+		"Email":       c.Query("email"),
+		"Name":        c.Query("name"),
+	}
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.Status(200)
+	t.ExecuteTemplate(c.Writer, "layout.html", data)
 }
 
 func (s *Server) handleIndex(c *gin.Context) {

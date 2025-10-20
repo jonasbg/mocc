@@ -1,0 +1,27 @@
+{{template "layout.html" .}}
+
+{{define "title"}}mocc - Callback{{end}}
+
+{{define "content"}}
+<header class="hero card">
+  <h1 class="page-title">Callback received</h1>
+  <p class="lead">You&rsquo;re logged in! This test endpoint helps you confirm your OIDC client flow end-to-end.</p>
+</header>
+
+<div class="card">
+  <h3>Callback parameters</h3>
+  <p>Here are the values your client sent along with this request.</p>
+  <ul class="callback-params">
+    <li><strong>code</strong>: {{if .Code}}{{.Code}}{{else}}<em>not provided</em>{{end}}</li>
+    <li><strong>state</strong>: {{if .State}}{{.State}}{{else}}<em>not provided</em>{{end}}</li>
+    <li><strong>id_token</strong>: {{if .IDToken}}{{.IDToken}}{{else}}<em>not provided</em>{{end}}</li>
+    <li><strong>access_token</strong>: {{if .AccessToken}}{{.AccessToken}}{{else}}<em>not provided</em>{{end}}</li>
+    <li><strong>email</strong>: {{if .Email}}{{.Email}}{{else}}<em>not provided</em>{{end}}</li>
+    <li><strong>name</strong>: {{if .Name}}{{.Name}}{{else}}<em>not provided</em>{{end}}</li>
+  </ul>
+
+  <div style="margin-top:1.5rem">
+    <a class="button" href="/">Back to home</a>
+  </div>
+</div>
+{{end}}

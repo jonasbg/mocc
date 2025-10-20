@@ -388,6 +388,30 @@ func TestHandleIndex(t *testing.T) {
 	}
 }
 
+func TestHandleCallback(t *testing.T) {
+	users := []config.User{{Name: "Test User", Email: "user@example.com"}}
+	ks := oidc.GenerateKeySet()
+	s := New(users, ks)
+
+	req := httptest.NewRequest("GET", "/callback?code=test-code&state=test-state&email=user%40example.com&name=Test+User", nil)
+	w := httptest.NewRecorder()
+	s.Engine.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", w.Code)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "You&rsquo;re logged in") {
+		t.Fatalf("expected login confirmation in body, got %q", body)
+	}
+	if !strings.Contains(body, "test-code") || !strings.Contains(body, "test-state") {
+		t.Fatalf("expected callback parameters in body, got %q", body)
+	}
+	if !strings.Contains(body, `href="/"`) {
+		t.Fatalf("expected link back to index page, got %q", body)
+	}
+}
+
 func TestHandleJWKS(t *testing.T) {
 	users := []config.User{{Name: "Alice", Email: "alice@example.com"}}
 	ks := oidc.GenerateKeySet()
