@@ -115,6 +115,7 @@ func New(users []config.User, keys *oidc.KeySet) *Server {
 	r.GET("/token/:email", s.handleTokenByEmail)
 	r.GET("/login", s.handleLoginRedirect)
 	r.GET("/jwks.json", s.handleJWKS)
+	r.GET("/userinfo", s.handleUserInfo)
 	r.GET("/.well-known/openid-configuration", s.handleDiscovery)
 
 	return s
@@ -321,6 +322,72 @@ func (s *Server) handleJWKS(c *gin.Context) {
 	c.JSON(200, s.Keys.JWKS())
 }
 
+func (s *Server) handleUserInfo(c *gin.Context) {
+	tokenString, err := extractBearerToken(c.Request)
+	if err != nil {
+		c.Header("WWW-Authenticate", `Bearer error="invalid_token", error_description="`+truncateDisplay(err.Error(), 120)+`"`)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+		return
+	}
+
+	parsedToken, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if token.Method.Alg() != jwt.SigningMethodRS256.Alg() {
+			return nil, fmt.Errorf("unexpected signing method %s", token.Method.Alg())
+		}
+		return s.Keys.Public, nil
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()}))
+	if err != nil || parsedToken == nil || !parsedToken.Valid {
+		c.Header("WWW-Authenticate", `Bearer error="invalid_token", error_description="`+truncateDisplay(fmt.Sprintf("token validation failed: %v", err), 120)+`"`)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+		return
+	}
+
+	claims, ok := parsedToken.Claims.(jwt.MapClaims)
+	if !ok {
+		c.Header("WWW-Authenticate", `Bearer error="invalid_token", error_description="unsupported claims type"`)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+		return
+	}
+
+	sub := ""
+	if rawSub, ok := claims["sub"]; ok {
+		sub = fmt.Sprint(rawSub)
+	}
+	if sub == "" {
+		if rawEmail, ok := claims["email"]; ok {
+			sub = fmt.Sprint(rawEmail)
+		}
+	}
+	if sub == "" {
+		c.Header("WWW-Authenticate", `Bearer error="invalid_token", error_description="token missing subject claims"`)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+		return
+	}
+
+	response := filterUserInfoClaims(claims)
+	response["sub"] = sub
+
+	if user := s.findUserBySub(sub); user != nil {
+		if user.Email != "" {
+			if _, exists := response["email"]; !exists {
+				response["email"] = user.Email
+			}
+		}
+		if user.Name != "" {
+			if _, exists := response["name"]; !exists {
+				response["name"] = user.Name
+			}
+		}
+		for k, v := range user.Claims {
+			if _, exists := response[k]; !exists {
+				response[k] = v
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
 func (s *Server) handleDiscovery(c *gin.Context) {
 	issuer := fmt.Sprintf("http://%s", c.Request.Host)
 	config := map[string]interface{}{
@@ -328,6 +395,7 @@ func (s *Server) handleDiscovery(c *gin.Context) {
 		"authorization_endpoint":                issuer + "/authorize",
 		"token_endpoint":                        issuer + "/token",
 		"jwks_uri":                              issuer + "/jwks.json",
+		"userinfo_endpoint":                     issuer + "/userinfo",
 		"id_token_signing_alg_values_supported": []string{"RS256"},
 		"response_types_supported":              []string{"code"},
 		"subject_types_supported":               []string{"public"},
@@ -425,4 +493,57 @@ func truncateDisplay(val string, limit int) string {
 		return string(runes[0])
 	}
 	return string(runes[:limit-1]) + "…"
+}
+
+func extractBearerToken(r *http.Request) (string, error) {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader != "" {
+		if len(authHeader) > 7 && strings.EqualFold(authHeader[:7], "Bearer ") {
+			token := strings.TrimSpace(authHeader[7:])
+			if token != "" {
+				return token, nil
+			}
+		}
+	}
+
+	if token := r.URL.Query().Get("access_token"); token != "" {
+		return token, nil
+	}
+
+	if r.Method == http.MethodPost {
+		if err := r.ParseForm(); err == nil {
+			if token := r.PostForm.Get("access_token"); token != "" {
+				return token, nil
+			}
+		}
+	}
+
+	return "", errors.New("missing bearer token")
+}
+
+func filterUserInfoClaims(claims jwt.MapClaims) map[string]interface{} {
+	reserved := map[string]struct{}{
+		"iss": {}, "aud": {}, "iat": {}, "exp": {}, "nbf": {}, "jti": {},
+		"azp": {}, "at_hash": {}, "c_hash": {}, "auth_time": {},
+	}
+	result := make(map[string]interface{})
+	for k, v := range claims {
+		if _, skip := reserved[k]; skip {
+			continue
+		}
+		if k == "sub" {
+			continue
+		}
+		result[k] = v
+	}
+	return result
+}
+
+func (s *Server) findUserBySub(sub string) *config.User {
+	for i := range s.Users {
+		if s.Users[i].Sub == sub || s.Users[i].Email == sub {
+			return &s.Users[i]
+		}
+	}
+	return nil
 }

@@ -77,7 +77,7 @@ body {
     --token-modal-text: #ebdbb2;
   }
 
-  +a {
+  a {
     color: #b8bb26;
     /* gruvbox green */
   }

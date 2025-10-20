@@ -157,6 +157,7 @@ func TestPKCE_WrongVerifier(t *testing.T) {
 
 func TestTokenIncludesUserClaims(t *testing.T) {
 	users := []config.User{{
+		Sub:    "alice-123",
 		Name:   "Alice",
 		Email:  "alice@example.com",
 		Claims: map[string]interface{}{"role": "admin", "profile": map[string]interface{}{"tier": "gold"}},
@@ -216,6 +217,7 @@ func TestTokenIncludesUserClaims(t *testing.T) {
 
 func TestTokenByEmail(t *testing.T) {
 	users := []config.User{{
+		Sub:    "alice-123",
 		Name:   "Alice",
 		Email:  "alice@example.com",
 		Claims: map[string]interface{}{"role": "tester", "profile": map[string]interface{}{"env": "dev"}},
@@ -285,6 +287,7 @@ func TestTokenByEmail(t *testing.T) {
 
 func TestTokenByEmailWithExtras(t *testing.T) {
 	users := []config.User{{
+		Sub:    "alice-123",
 		Name:   "Alice",
 		Email:  "alice@example.com",
 		Claims: map[string]interface{}{"role": "tester", "feature": "baseline"},
@@ -400,6 +403,115 @@ func TestHandleJWKS(t *testing.T) {
 	}
 }
 
+func TestUserInfoReturnsClaims(t *testing.T) {
+	users := []config.User{{
+		Sub:    "alice-123",
+		Name:   "Alice Example",
+		Email:  "alice@example.com",
+		Claims: map[string]interface{}{"role": "admin", "profile": map[string]interface{}{"tier": "gold"}},
+	}}
+	ks := oidc.GenerateKeySet()
+	s := New(users, ks)
+
+	clientID := "test-client"
+	redirectURI := "http://localhost/cb"
+	verifier := "verifier-xyz"
+	hash := sha256.Sum256([]byte(verifier))
+	challenge := base64.RawURLEncoding.EncodeToString(hash[:])
+
+	code := doAuthorize(t, s.Engine, users, clientID, redirectURI, challenge, "S256")
+	if code == "" {
+		t.Fatalf("no code returned from authorize")
+	}
+
+	tokenResp := doToken(t, s.Engine, code, clientID, verifier)
+	if tokenResp.Code != http.StatusOK {
+		body, _ := io.ReadAll(tokenResp.Body)
+		t.Fatalf("token exchange failed: %d %s", tokenResp.Code, string(body))
+	}
+
+	var issued struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal(tokenResp.Body.Bytes(), &issued); err != nil {
+		t.Fatalf("failed to decode token response: %v", err)
+	}
+	if issued.AccessToken == "" {
+		t.Fatal("expected non-empty access_token")
+	}
+
+	req := httptest.NewRequest("GET", "/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer "+issued.AccessToken)
+	w := httptest.NewRecorder()
+	s.Engine.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		body, _ := io.ReadAll(w.Body)
+		t.Fatalf("expected 200 OK, got %d: %s", w.Code, string(body))
+	}
+
+	var info map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &info); err != nil {
+		t.Fatalf("failed to decode userinfo response: %v", err)
+	}
+
+	if got := info["sub"]; got != users[0].Sub {
+		t.Fatalf("expected sub %q, got %v", users[0].Sub, got)
+	}
+	if got := info["email"]; got != users[0].Email {
+		t.Fatalf("expected email %q, got %v", users[0].Email, got)
+	}
+	if got := info["name"]; got != users[0].Name {
+		t.Fatalf("expected name %q, got %v", users[0].Name, got)
+	}
+	profile, ok := info["profile"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected profile claim object, got %T", info["profile"])
+	}
+	if tier := profile["tier"]; tier != "gold" {
+		t.Fatalf("expected profile.tier 'gold', got %v", tier)
+	}
+	if _, ok := info["iss"]; ok {
+		t.Fatal("did not expect iss claim in userinfo response")
+	}
+}
+
+func TestUserInfoRequiresValidToken(t *testing.T) {
+	users := []config.User{{
+		Sub:   "alice-123",
+		Name:  "Alice Example",
+		Email: "alice@example.com",
+	}}
+	ks := oidc.GenerateKeySet()
+	s := New(users, ks)
+
+	for _, tc := range []struct {
+		name          string
+		authHeader    string
+		expectStatus  int
+		expectWWWAuth bool
+	}{
+		{name: "missing token", authHeader: "", expectStatus: http.StatusUnauthorized, expectWWWAuth: true},
+		{name: "invalid token", authHeader: "Bearer not-a-token", expectStatus: http.StatusUnauthorized, expectWWWAuth: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/userinfo", nil)
+			if tc.authHeader != "" {
+				req.Header.Set("Authorization", tc.authHeader)
+			}
+			w := httptest.NewRecorder()
+			s.Engine.ServeHTTP(w, req)
+
+			if w.Code != tc.expectStatus {
+				t.Fatalf("expected status %d, got %d", tc.expectStatus, w.Code)
+			}
+			if got := w.Header().Get("WWW-Authenticate"); tc.expectWWWAuth && got == "" {
+				t.Fatal("expected WWW-Authenticate header")
+			}
+		})
+	}
+}
+
 func TestHandleDiscovery(t *testing.T) {
 	users := []config.User{{Name: "Alice", Email: "alice@example.com"}}
 	ks := oidc.GenerateKeySet()
@@ -413,6 +525,13 @@ func TestHandleDiscovery(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "issuer") {
 		t.Fatalf("expected issuer in discovery JSON")
+	}
+	var discovery map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &discovery); err != nil {
+		t.Fatalf("failed to unmarshal discovery response: %v", err)
+	}
+	if got := discovery["userinfo_endpoint"]; got != "http://example.com/userinfo" {
+		t.Fatalf("expected userinfo_endpoint http://example.com/userinfo, got %v", got)
 	}
 }
 
