@@ -21,8 +21,8 @@ import (
 	"syscall"
 	"time"
 
-    "github.com/gin-gonic/gin"
-    "github.com/golang-jwt/jwt/v5"
+	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 
 	"mocc/internal/config"
 	"mocc/internal/oidc"
@@ -418,6 +418,90 @@ func applyExtraClaims(dst jwt.MapClaims, extras map[string]interface{}) {
 	}
 }
 
+const (
+	ansiReset = "\033[0m"
+	ansiBold  = "\033[1m"
+	ansiDim   = "\033[2m"
+
+	colorBlue    = "\033[38;5;39m"
+	colorGreen   = "\033[38;5;71m"
+	colorMagenta = "\033[38;5;171m"
+	colorCyan    = "\033[38;5;44m"
+	colorYellow  = "\033[38;5;221m"
+	colorRed     = "\033[38;5;203m"
+	colorGray    = "\033[38;5;246m"
+)
+
+type logDetailStyle struct {
+	key   string
+	value string
+}
+
+var (
+	defaultDetailStyle = logDetailStyle{key: ansiBold + colorGray, value: colorGray}
+	locationStyle      = logDetailStyle{key: ansiBold + colorCyan, value: colorCyan}
+	detailPalette      = map[string]logDetailStyle{
+		"response_type":         {key: ansiBold + colorCyan, value: colorCyan},
+		"client_id":             {key: ansiBold + colorMagenta, value: colorMagenta},
+		"redirect_uri":          {key: ansiBold + colorGreen, value: colorGreen},
+		"scope":                 {key: ansiBold + colorYellow, value: colorYellow},
+		"state":                 {key: ansiBold + colorBlue, value: colorBlue},
+		"nonce":                 {key: ansiBold + colorCyan, value: colorCyan},
+		"code_challenge":        {key: ansiBold + colorMagenta, value: colorMagenta},
+		"code_challenge_method": {key: ansiBold + colorGray, value: colorGray},
+		"grant_type":            {key: ansiBold + colorYellow, value: colorYellow},
+		"code":                  {key: ansiBold + colorBlue, value: colorBlue},
+		"code_verifier":         {key: ansiBold + colorGreen, value: colorGreen},
+	}
+)
+
+func wrapColor(text, color string) string {
+	if color == "" {
+		return text
+	}
+	return color + text + ansiReset
+}
+
+func formatDetail(key, value string) string {
+	style, ok := detailPalette[key]
+	if !ok {
+		if key == "location" {
+			style = locationStyle
+		} else {
+			style = defaultDetailStyle
+		}
+	}
+	return fmt.Sprintf("%s%s%s=%s%s%s", style.key, key, ansiReset, style.value, value, ansiReset)
+}
+
+func colorForMethod(method string) string {
+	switch method {
+	case http.MethodGet:
+		return ansiBold + colorCyan
+	case http.MethodPost:
+		return ansiBold + colorMagenta
+	case http.MethodPut, http.MethodPatch:
+		return ansiBold + colorYellow
+	case http.MethodDelete:
+		return ansiBold + colorRed
+	default:
+		return ansiBold + colorGray
+	}
+}
+
+func colorForStatus(status int) string {
+	switch {
+	case status >= 500:
+		return ansiBold + colorRed
+	case status >= 400:
+		return ansiBold + colorYellow
+	case status >= 300:
+		return ansiBold + colorCyan
+	default:
+		return ansiBold + colorGreen
+	}
+}
+
 func requestLogger() gin.HandlerFunc {
 	interestingKeys := []string{
 		"response_type",
@@ -440,22 +524,26 @@ func requestLogger() gin.HandlerFunc {
 		path := c.Request.URL.Path
 		status := c.Writer.Status()
 
-		details := make([]string, 0, len(interestingKeys))
+		details := make([]string, 0, len(interestingKeys)+1)
 		for _, key := range interestingKeys {
 			if val := c.Query(key); val != "" {
-				details = append(details, fmt.Sprintf("%s=%s", key, truncateDisplay(val, 60)))
+				details = append(details, formatDetail(key, truncateDisplay(val, 60)))
 				continue
 			}
 			if val := c.PostForm(key); val != "" {
-				details = append(details, fmt.Sprintf("%s=%s", key, truncateDisplay(val, 60)))
+				details = append(details, formatDetail(key, truncateDisplay(val, 60)))
 			}
 		}
 
 		if loc := c.Writer.Header().Get("Location"); loc != "" {
-			details = append(details, fmt.Sprintf("location=%s", truncateDisplay(loc, 80)))
+			details = append(details, formatDetail("location", truncateDisplay(loc, 80)))
 		}
 
-		msg := fmt.Sprintf("%s %s -> %d", method, path, status)
+		methodStr := wrapColor(method, colorForMethod(method))
+		pathStr := wrapColor(path, ansiDim+colorGray)
+		statusStr := wrapColor(fmt.Sprintf("%d", status), colorForStatus(status))
+
+		msg := fmt.Sprintf("%s %s -> %s", methodStr, pathStr, statusStr)
 		if len(details) > 0 {
 			msg = fmt.Sprintf("%s [%s]", msg, strings.Join(details, " "))
 		}

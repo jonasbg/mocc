@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"syscall"
 	"testing"
@@ -722,17 +723,14 @@ func TestRequestLogger(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	out := buf.String()
-	if !strings.Contains(out, "GET /authorize -> 302") {
-		t.Fatalf("expected log to include method/path/status, got %q", out)
-	}
-	if !strings.Contains(out, "client_id=test-client") {
-		t.Fatalf("expected log to include client_id, got %q", out)
-	}
-	if !strings.Contains(out, "scope=openid") {
-		t.Fatalf("expected log to include scope, got %q", out)
-	}
-	if !strings.Contains(out, "location=http://callback") {
-		t.Fatalf("expected log to include redirect location, got %q", out)
+	// Strip ANSI escape codes from log output for matching
+	ansiRegexp := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	cleanOut := ansiRegexp.ReplaceAllString(out, "")
+	required := []string{"GET", "/authorize", "302", "client_id=test-client", "scope=openid", "http://callback"}
+	for _, val := range required {
+		if !strings.Contains(cleanOut, val) {
+			t.Fatalf("expected log to include %q, got %q", val, cleanOut)
+		}
 	}
 }
 
