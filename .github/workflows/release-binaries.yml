@@ -12,6 +12,8 @@ jobs:
   build:
     name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
     runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ github.event.release.tag_name || github.ref_name || 'dev' }}
     strategy:
       fail-fast: false
       matrix:
@@ -62,8 +64,10 @@ jobs:
 
           mkdir -p "${STAGING_DIR}"
 
+          VERSION="${VERSION:-dev}"
+
           GOOS="${GOOS}" GOARCH="${GOARCH}" CGO_ENABLED=0 \
-            go build -trimpath -ldflags "-s -w" -o "${STAGING_DIR}/${BINARY_NAME}" ./cmd/mocc
+            go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "${STAGING_DIR}/${BINARY_NAME}" ./cmd/mocc
 
           if [ "${GOOS}" = "windows" ]; then
             (cd "${STAGING_DIR}" && zip -r "../${APP_NAME}-${SUFFIX}.zip" "${BINARY_NAME}")

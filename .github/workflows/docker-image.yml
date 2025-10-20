@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - "*"
+    tags:
+      - "*"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -16,6 +18,8 @@ env:
 jobs:
   docker-build:
     runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
     outputs:
       main_digest: ${{ steps.build-main.outputs.digest }}
       registry: ${{ steps.derive-registry.outputs.registry }}
@@ -77,8 +81,9 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.REPO }}
           tags: |
             type=ref,event=branch
+            type=ref,event=tag
             type=raw,value=latest,enable=${{ github.ref_name == 'main' }}
-            type=raw,value=dev,enable=${{ github.ref_name != 'main' }}
+            type=raw,value=dev,enable=${{ github.ref_type == 'branch' && github.ref_name != 'main' }}
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -97,5 +102,7 @@ jobs:
           push: true
           tags: ${{ steps.meta-main.outputs.tags }}
           labels: ${{ steps.meta-main.outputs.labels }}
+          build-args: |
+            MOCC_VERSION=${{ env.VERSION }}
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.REPO }}:cache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.REPO }}:cache,mode=max

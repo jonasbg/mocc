@@ -8,11 +8,15 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
+	"unicode/utf8"
 
 	"mocc/internal/config"
 	"mocc/internal/oidc"
 	"mocc/internal/server"
 )
+
+var version = "dev"
 
 type options struct {
 	usersPath     string
@@ -20,10 +24,16 @@ type options struct {
 	port          string
 	usersFromEnv  bool
 	usersFromFlag bool
+	showVersion   bool
 }
 
 func main() {
 	opts := parseOptions()
+
+	if opts.showVersion {
+		fmt.Println(version)
+		return
+	}
 
 	users, err := config.LoadUsers(opts.usersPath)
 	if err != nil {
@@ -94,6 +104,7 @@ func parseOptions() options {
 	flagSet.StringVar(&opts.usersPath, "users", opts.usersPath, "Path to the users YAML file")
 	flagSet.StringVar(&opts.host, "host", opts.host, "Host/IP address to bind to")
 	flagSet.StringVar(&opts.port, "port", opts.port, "Port to listen on")
+	flagSet.BoolVar(&opts.showVersion, "version", false, "Show MOCC version and exit")
 
 	_ = flagSet.Parse(os.Args[1:])
 
@@ -129,15 +140,15 @@ func printBanner(host, port string) {
 │    MOCC — Minimal OpenID Connect Core        │
 │    https://github.com/jonasbg/mocc           │
 │                                              │
-└──────────────────────────────────────────────┘
-
-
 `
 	displayHost := host
 	if displayHost == "" || displayHost == "0.0.0.0" || displayHost == "::" {
 		displayHost = "localhost"
 	}
+
 	fmt.Print(banner)
+	fmt.Println(buildFooterLine(banner, version))
+	fmt.Println()
 	fmt.Printf("MOCC ready at http://%s:%s — happy moccing!\n", displayHost, port)
 	fmt.Println()
 	fmt.Println("Quick tips:")
@@ -148,4 +159,71 @@ func printBanner(host, port string) {
 	fmt.Println()
 	fmt.Println("Docs & updates: https://github.com/jonasbg/mocc")
 	fmt.Println()
+}
+
+// buildFooterLine returns a line like:
+// [spaces]└────── version ──────┘
+// - total width ≤ 130
+// - centered under the banner width
+func buildFooterLine(banner, version string) string {
+	bannerWidth := measureBannerWidth(banner)    // width of the top box line
+	const maxWidth = 130                         // hard cap
+	footerWidth := minInt(bannerWidth, maxWidth) // we won't exceed 130
+	innerWidth := footerWidth - 2                // minus corners
+	content := " " + version + " "
+	contentLen := utf8.RuneCountInString(content)
+
+	// If content is too wide, trim version to fit (keep room for single spaces if possible).
+	if contentLen > innerWidth {
+		// leave at least 0 dashes; trim to innerWidth
+		content = trimRunes(content, innerWidth)
+		contentLen = utf8.RuneCountInString(content)
+	}
+
+	dashTotal := innerWidth - contentLen
+	if dashTotal < 0 {
+		dashTotal = 0
+	}
+	leftDashes := dashTotal / 2
+	rightDashes := dashTotal - leftDashes
+
+	line := "└" + strings.Repeat("─", leftDashes) + content + strings.Repeat("─", rightDashes) + "┘"
+
+	// If the banner is wider than the footer, left-pad spaces so the footer is centered.
+	leftPad := 0
+	if bannerWidth > footerWidth {
+		leftPad = (bannerWidth - footerWidth) / 2
+	}
+
+	return strings.Repeat(" ", leftPad) + line
+}
+
+func measureBannerWidth(b string) int {
+	// Use the first non-empty line; the top frame line is perfect.
+	lines := strings.Split(b, "\n")
+	for _, ln := range lines {
+		if strings.TrimSpace(ln) != "" {
+			return utf8.RuneCountInString(ln)
+		}
+	}
+	return 80 // fallback
+}
+
+func trimRunes(s string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= limit {
+		return s
+	}
+	// prefer keeping a trailing space if limit allows
+	return string(runes[:limit])
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

@@ -6,9 +6,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 
+ARG MOCC_VERSION=dev
 ENV CGO_ENABLED=0 GOOS=linux
 # Build the command located under cmd/mocc
-RUN go build -ldflags='-s -w' -o /out/mocc ./cmd/mocc
+RUN go build -ldflags="-s -w -X main.version=${MOCC_VERSION}" -o /out/mocc ./cmd/mocc
 RUN apk add --no-cache upx
 RUN upx --best --lzma /out/mocc
 
