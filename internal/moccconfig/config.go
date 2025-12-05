@@ -1,4 +1,4 @@
-package config
+package moccconfig
 
 import (
 	"errors"
@@ -10,39 +10,48 @@ import (
 )
 
 type User struct {
-	Sub      string `yaml:"sub"`
-	Name     string `yaml:"name"`
-	Email    string `yaml:"email"`
-	Initials string `yaml:"-"`
+	Sub      string                 `yaml:"sub"`
+	Name     string                 `yaml:"name"`
+	Email    string                 `yaml:"email"`
+	Initials string                 `yaml:"-"`
 	Claims   map[string]interface{} `yaml:"claims"`
 }
 
 type Config struct {
-	Users []User `yaml:"users"`
+	Users        []User       `yaml:"users"`
+	ServerConfig ServerConfig `yaml:"config"`
 }
 
-// LoadUsers reads users.yaml from the provided path and returns users.
-func LoadUsers(path string) ([]User, error) {
+type ServerConfig struct {
+	//Host string `yaml:"host"`
+	//Port int    `yaml:"port"`
+	//TLSCertPath  string `yaml:"tls_cert_path"`
+	//TLSKeyPath   string `yaml:"tls_key_path"`
+	AllowOrigins []string `yaml:"allow_origins"`
+}
+
+// LoadConfig reads users.yaml from the provided path and returns users.
+func LoadConfig(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return Config{}, err
 	}
 	return parseUsers(data)
 }
 
 // LoadEmbeddedUsers returns the users from the embedded default users.yaml.
-func LoadEmbeddedUsers() ([]User, error) {
+func LoadEmbeddedUsers() (Config, error) {
 	if len(defaultUsersYAML) == 0 {
-		return nil, errors.New("embedded users configuration is empty")
+		return Config{}, errors.New("embedded users configuration is empty")
 	}
 	return parseUsers(defaultUsersYAML)
 }
 
 // parseUsers unmarshals users.yaml data and applies normalization.
-func parseUsers(data []byte) ([]User, error) {
+func parseUsers(data []byte) (Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
+		return Config{}, err
 	}
 	// Infer sub and compute initials
 	for i := range cfg.Users {
@@ -54,7 +63,7 @@ func parseUsers(data []byte) ([]User, error) {
 		cfg.Users[i].Initials = initials(name)
 		cfg.Users[i].Claims = normalizeClaims(cfg.Users[i].Claims)
 	}
-	return cfg.Users, nil
+	return cfg, nil
 }
 
 // HasEmbeddedUsers reports whether an embedded users.yaml is present.

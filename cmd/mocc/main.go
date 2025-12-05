@@ -1,17 +1,21 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
 	"log"
 	"net"
+	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"time"
 	"unicode/utf8"
 
-	"mocc/internal/config"
+	"mocc/internal/moccconfig"
 	"mocc/internal/oidc"
 	"mocc/internal/server"
 )
@@ -35,10 +39,10 @@ func main() {
 		return
 	}
 
-	users, err := config.LoadUsers(opts.usersPath)
+	config, err := moccconfig.LoadConfig(opts.usersPath)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) && !opts.usersFromEnv && !opts.usersFromFlag && config.HasEmbeddedUsers() {
-			users, err = config.LoadEmbeddedUsers()
+		if errors.Is(err, fs.ErrNotExist) && !opts.usersFromEnv && !opts.usersFromFlag && moccconfig.HasEmbeddedUsers() {
+			config, err = moccconfig.LoadEmbeddedUsers()
 			if err != nil {
 				log.Fatalf("failed to load embedded users: %v", err)
 			}
@@ -48,18 +52,54 @@ func main() {
 	}
 
 	keys := oidc.GenerateKeySet()
-	s := server.New(users, keys)
+	s := server.New(config, keys)
 
 	addr := net.JoinHostPort(opts.host, opts.port)
 	s.Engine.SetTrustedProxies(nil)
 
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		log.Fatalf("failed to listen on %s: %v", addr, err)
+	printBanner(opts.host, opts.port)
+
+	httpServ := &http.Server{
+		Addr:    addr,
+		Handler: s.Engine,
+	}
+	chanHttpErr := make(chan error)
+
+	go func() {
+		err = httpServ.ListenAndServe()
+		if err != nil {
+			if !errors.Is(err, http.ErrServerClosed) {
+				chanHttpErr <- err
+			}
+		}
+	}()
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	select {
+	// if we are toldt to abort, initate gracefull shutdown of the http
+	// server
+	case <-ctx.Done():
+		log.Println("http server: attempting graceful shutdown")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		err = httpServ.Shutdown(ctx)
+		if err != nil {
+			log.Println("error while http server was shutting down", err)
+			os.Exit(1)
+		}
+
+		log.Println("http server: graceful shutdown complete")
+		os.Exit(0)
+	// handle unexpected errors from the http server
+	case <-chanHttpErr:
+		log.Println("http server closed unexpectedly", err)
+		os.Exit(1)
 	}
 
-	printBanner(opts.host, opts.port)
-	log.Fatal(s.Engine.RunListener(ln))
 }
 
 func parseOptions() options {
