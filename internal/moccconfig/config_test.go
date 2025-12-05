@@ -1,4 +1,4 @@
-package config
+package moccconfig
 
 import (
 	"os"
@@ -20,14 +20,14 @@ func TestLoadUsers(t *testing.T) {
 	}
 	f.Close()
 
-	users, err := LoadUsers(f.Name())
+	users, err := LoadConfig(f.Name())
 	if err != nil {
 		t.Fatalf("LoadUsers failed: %v", err)
 	}
-	if len(users) != 1 {
-		t.Fatalf("expected 1 user, got %d", len(users))
+	if len(users.Users) != 1 {
+		t.Fatalf("expected 1 user, got %d", len(users.Users))
 	}
-	u := users[0]
+	u := users.Users[0]
 	if u.Sub != u.Email {
 		t.Fatalf("expected Sub to default to Email, got Sub=%q Email=%q", u.Sub, u.Email)
 	}
@@ -41,7 +41,7 @@ func TestLoadEmbeddedUsers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadEmbeddedUsers failed: %v", err)
 	}
-	if len(users) == 0 {
+	if len(users.Users) == 0 {
 		t.Fatalf("expected embedded users, got none")
 	}
 }
@@ -54,12 +54,12 @@ func TestHasEmbeddedUsers(t *testing.T) {
 
 func TestInitials(t *testing.T) {
 	cases := map[string]string{
-		"":                "",
-		" ":               "",
-		"Pat":             "PA",
-		"Li":              "LI",
-		"Ada Lovelace":    "AL",
-		"Grace Brewster":  "GB",
+		"":                  "",
+		" ":                 "",
+		"Pat":               "PA",
+		"Li":                "LI",
+		"Ada Lovelace":      "AL",
+		"Grace Brewster":    "GB",
 		"First Middle Last": "FL",
 	}
 	for name, want := range cases {

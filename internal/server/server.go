@@ -21,10 +21,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 
-	"mocc/internal/config"
+	"mocc/internal/moccconfig"
 	"mocc/internal/oidc"
 	"mocc/internal/templates"
 )
@@ -32,29 +33,30 @@ import (
 type Server struct {
 	Engine    *gin.Engine
 	Templates map[string]*template.Template
-	Users     []config.User
+	Users     []moccconfig.User
 	Keys      *oidc.KeySet
 	authCodes map[string]authCodeData
 	authMux   sync.Mutex
 }
 
 type authCodeData struct {
-	User                config.User
+	User                moccconfig.User
 	ClientID            string
 	ExpiresAt           time.Time
 	CodeChallenge       string
 	CodeChallengeMethod string
 }
 
-func New(users []config.User, keys *oidc.KeySet) *Server {
+func New(config moccconfig.Config, keys *oidc.KeySet) *Server {
 	// load templates from embedded FS
 	t := templates.LoadTemplates()
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
-	s := &Server{Engine: r, Templates: t, Users: users, Keys: keys, authCodes: map[string]authCodeData{}}
+	s := &Server{Engine: r, Templates: t, Users: config.Users, Keys: keys, authCodes: map[string]authCodeData{}}
 
 	r.Use(gin.Recovery())
 	r.Use(requestLogger())
+	r.Use(CORS(config.ServerConfig.AllowOrigins))
 	r.Use(ignoreClientDisconnects())
 
 	// static handler: serve embedded assets first, then try several on-disk locations for dev
@@ -180,7 +182,7 @@ func (s *Server) handleAuthorizePost(c *gin.Context) {
 		c.String(400, "Missing parameters")
 		return
 	}
-	var user *config.User
+	var user *moccconfig.User
 	for _, u := range s.Users {
 		if u.Email == sub {
 			user = &u
@@ -274,7 +276,7 @@ func (s *Server) handleTokenByEmail(c *gin.Context) {
 		c.String(400, "Missing email")
 		return
 	}
-	var selected *config.User
+	var selected *moccconfig.User
 	for i := range s.Users {
 		if s.Users[i].Email == email {
 			selected = &s.Users[i]
@@ -631,11 +633,24 @@ func filterUserInfoClaims(claims jwt.MapClaims) map[string]interface{} {
 	return result
 }
 
-func (s *Server) findUserBySub(sub string) *config.User {
+func (s *Server) findUserBySub(sub string) *moccconfig.User {
 	for i := range s.Users {
 		if s.Users[i].Sub == sub || s.Users[i].Email == sub {
 			return &s.Users[i]
 		}
 	}
 	return nil
+}
+
+func CORS(origins []string) gin.HandlerFunc {
+	corsConfig := cors.DefaultConfig()
+	//corsConfig.AllowCredentials = true
+
+	if len(origins) == 0 {
+		origins = []string{"*"}
+	}
+	corsConfig.AllowOrigins = origins
+
+	corsConfig.AddAllowHeaders("authorization")
+	return cors.New(corsConfig)
 }
