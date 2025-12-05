@@ -24,7 +24,7 @@ func TestParseOptionsDefaults(t *testing.T) {
 	if opts.usersPath != "users.yaml" {
 		t.Fatalf("expected default users path, got %q", opts.usersPath)
 	}
-	if opts.host != "0.0.0.0" {
+	if opts.host != "127.0.0.1" {
 		t.Fatalf("expected default host, got %q", opts.host)
 	}
 	if opts.port != "9999" {
@@ -81,6 +81,15 @@ func TestFirstNonEmpty(t *testing.T) {
 	}
 }
 
+func TestGetLocalIP(t *testing.T) {
+	ip := getLocalIP()
+	// IP might be empty on some systems or in CI, that's OK
+	// Just verify the function doesn't panic and returns a string
+	if ip != "" {
+		t.Logf("Found local IP: %s", ip)
+	}
+}
+
 func TestPrintBanner(t *testing.T) {
 	origStdout := os.Stdout
 	defer func() { os.Stdout = origStdout }()
@@ -101,8 +110,11 @@ func TestPrintBanner(t *testing.T) {
 	r.Close()
 
 	output := buf.String()
-	if !strings.Contains(output, "ready at http://localhost:4242") {
+	if !strings.Contains(output, "ready — happy moccing!") {
 		t.Fatalf("expected friendly message, got %q", output)
+	}
+	if !strings.Contains(output, "Local:") {
+		t.Fatalf("expected Local URL, got %q", output)
 	}
 	if !strings.Contains(output, "--users <path>") {
 		t.Fatalf("expected tips section, got %q", output)
