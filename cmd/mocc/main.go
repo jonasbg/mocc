@@ -81,22 +81,20 @@ func main() {
 	// if we are toldt to abort, initate gracefull shutdown of the http
 	// server
 	case <-ctx.Done():
-		log.Println("http server: attempting graceful shutdown")
-
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		err = httpServ.Shutdown(ctx)
 		if err != nil {
-			log.Println("error while http server was shutting down", err)
+			log.Println("error during shutdown:", err)
 			os.Exit(1)
 		}
 
-		log.Println("http server: graceful shutdown complete")
+		fmt.Println("\nWork done? Well MOCC again tomorrow!")
 		os.Exit(0)
 	// handle unexpected errors from the http server
 	case <-chanHttpErr:
-		log.Println("http server closed unexpectedly", err)
+		log.Println("server closed unexpectedly:", err)
 		os.Exit(1)
 	}
 
@@ -105,7 +103,7 @@ func main() {
 func parseOptions() options {
 	const (
 		defaultUsersPath = "users.yaml"
-		defaultHost      = "0.0.0.0"
+		defaultHost      = "127.0.0.1"
 		defaultPort      = "9999"
 	)
 
@@ -135,7 +133,7 @@ func parseOptions() options {
 		fmt.Fprintln(out)
 		fmt.Fprintln(out, "Environment variables:")
 		fmt.Fprintln(out, "  MOCC_USERS, USERS — path to users YAML (default: users.yaml)")
-		fmt.Fprintln(out, "  MOCC_HOST, HOST   — address to bind (default: 0.0.0.0)")
+		fmt.Fprintln(out, "  MOCC_HOST, HOST   — address to bind (default: 127.0.0.1, use 0.0.0.0 for network)")
 		fmt.Fprintln(out, "  MOCC_PORT, PORT   — port to bind (default: 9999)")
 		fmt.Fprintln(out)
 		flagSet.PrintDefaults()
@@ -181,24 +179,55 @@ func printBanner(host, port string) {
 │    https://github.com/jonasbg/mocc           │
 │                                              │
 `
-	displayHost := host
-	if displayHost == "" || displayHost == "0.0.0.0" || displayHost == "::" {
-		displayHost = "localhost"
-	}
-
 	fmt.Print(banner)
 	fmt.Println(buildFooterLine(banner, version))
 	fmt.Println()
-	fmt.Printf("MOCC ready at http://%s:%s — happy moccing!\n", displayHost, port)
+	fmt.Println("MOCC ready — happy moccing!")
+	fmt.Println()
+
+	// Determine if we're exposed to the network
+	isNetworkExposed := host == "0.0.0.0" || host == "::"
+
+	if isNetworkExposed {
+		// Show both Local and Network URLs
+		fmt.Printf("  ➜  Local:   http://localhost:%s\n", port)
+		if networkIP := getLocalIP(); networkIP != "" {
+			fmt.Printf("  ➜  Network: http://%s:%s\n", networkIP, port)
+		}
+	} else {
+		// Show single URL for localhost-only or specific IP
+		displayHost := host
+		if displayHost == "" || displayHost == "127.0.0.1" {
+			displayHost = "localhost"
+		}
+		fmt.Printf("  ➜  Local:   http://%s:%s\n", displayHost, port)
+	}
 	fmt.Println()
 	fmt.Println("Quick tips:")
 	fmt.Println("  • --users <path>    override the bundled users list (env: MOCC_USERS / USERS)")
-	fmt.Println("  • --host <address>  change bind address (env: MOCC_HOST / HOST)")
+	fmt.Println("  • --host 0.0.0.0    expose to network (default: localhost only, env: MOCC_HOST / HOST)")
 	fmt.Println("  • --port <port>     pick a different port (env: MOCC_PORT / PORT)")
 	fmt.Println("  • Flags win over env vars; env vars win over built-in defaults.")
 	fmt.Println()
 	fmt.Println("Docs & updates: https://github.com/jonasbg/mocc")
 	fmt.Println()
+}
+
+// getLocalIP returns the first non-loopback IPv4 address found on the machine.
+// Returns empty string if no suitable address is found.
+func getLocalIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	for _, addr := range addrs {
+		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP.String()
+			}
+		}
+	}
+	return ""
 }
 
 // buildFooterLine returns a line like:

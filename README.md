@@ -123,16 +123,33 @@ users:
         beta: true
 ```
 
+### CORS Configuration (Optional)
+
+You can optionally configure CORS (Cross-Origin Resource Sharing) to restrict which origins can access the OIDC endpoints. Add a `config` section to your `users.yaml`:
+
+```yaml
+config:
+  allow_origins:
+    - "http://localhost:5173"
+    - "https://app.example.com"
+
+users:
+  - name: "Alice Admin"
+    email: "alice.admin@test.local"
+```
+
+If the `config` section is omitted or `allow_origins` is empty, CORS defaults to allowing all origins (`*`). This is convenient for local development but can be restricted for more controlled testing environments.
+
 Flags:
 
 - `--users` — path to the users YAML file (default: `users.yaml`)
-- `--host` — host/IP address to bind to (default: `0.0.0.0`)
+- `--host` — host/IP address to bind to (default: `127.0.0.1`, use `0.0.0.0` to expose to network)
 - `--port` — port to listen on (default: `9999`)
 
 Environment variables:
 
 - `MOCC_USERS` or `USERS` — path to the users YAML (default: `users.yaml`, `/config/users.yaml` in Docker)
-- `MOCC_HOST` or `HOST` — host/IP address to bind to (default: `0.0.0.0`)
+- `MOCC_HOST` or `HOST` — host/IP address to bind to (default: `127.0.0.1`, use `0.0.0.0` to expose to network)
 - `MOCC_PORT` or `PORT` — port to bind (default: `9999`)
 - If no users file is found and you rely on defaults, the binary falls back to an embedded copy of `users.yaml` bundled at build time.
 
