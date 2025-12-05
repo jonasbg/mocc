@@ -30,6 +30,7 @@ VOLUME ["/config"]
 
 # Environment variables with sensible defaults. Users can override at runtime or via Dockerfile --env
 ENV USERS="/config/users.yaml"
+ENV HOST=0.0.0.0
 ENV PORT=9999
 ENV GIN_MODE=release
 
