@@ -32,12 +32,15 @@ func TestMain(m *testing.M) {
 }
 
 // helper: perform authorize flow: GET /authorize?client_id=...&redirect_uri=...&code_challenge=... then POST /authorize with selected user
-func doAuthorize(t *testing.T, srv http.Handler, users []moccconfig.User, clientID, redirectURI, codeChallenge, method string) (code string) {
+func doAuthorize(t *testing.T, srv http.Handler, users []moccconfig.User, clientID, redirectURI, nonce, codeChallenge, method string) (code string) {
 	t.Helper()
 	// GET authorize to get login page (we don't parse it, just ensure 200)
 	v := url.Values{}
 	v.Set("client_id", clientID)
 	v.Set("redirect_uri", redirectURI)
+	if nonce != "" {
+		v.Set("nonce", nonce)
+	}
 	if codeChallenge != "" {
 		v.Set("code_challenge", codeChallenge)
 		v.Set("code_challenge_method", method)
@@ -54,6 +57,9 @@ func doAuthorize(t *testing.T, srv http.Handler, users []moccconfig.User, client
 	form.Set("sub", users[0].Email)
 	form.Set("client_id", clientID)
 	form.Set("redirect_uri", redirectURI)
+	if nonce != "" {
+		form.Set("nonce", nonce)
+	}
 	if codeChallenge != "" {
 		form.Set("code_challenge", codeChallenge)
 		form.Set("code_challenge_method", method)
@@ -102,7 +108,7 @@ func TestPKCE_S256(t *testing.T) {
 	h := sha256.Sum256([]byte(verifier))
 	challenge := base64.RawURLEncoding.EncodeToString(h[:])
 
-	code := doAuthorize(t, s.Engine, config.Users, clientID, redirectURI, challenge, "S256")
+	code := doAuthorize(t, s.Engine, config.Users, clientID, redirectURI, "", challenge, "S256")
 	if code == "" {
 		t.Fatalf("no code returned from authorize")
 	}
@@ -126,7 +132,7 @@ func TestPKCE_Plain(t *testing.T) {
 	verifier := "plain-verifier"
 	challenge := verifier
 
-	code := doAuthorize(t, s.Engine, config.Users, clientID, redirectURI, challenge, "plain")
+	code := doAuthorize(t, s.Engine, config.Users, clientID, redirectURI, "", challenge, "plain")
 	if code == "" {
 		t.Fatalf("no code returned from authorize")
 	}
@@ -151,7 +157,7 @@ func TestPKCE_WrongVerifier(t *testing.T) {
 	h := sha256.Sum256([]byte(verifier))
 	challenge := base64.RawURLEncoding.EncodeToString(h[:])
 
-	code := doAuthorize(t, s.Engine, config.Users, clientID, redirectURI, challenge, "S256")
+	code := doAuthorize(t, s.Engine, config.Users, clientID, redirectURI, "", challenge, "S256")
 	if code == "" {
 		t.Fatalf("no code returned from authorize")
 	}
@@ -180,7 +186,7 @@ func TestTokenIncludesUserClaims(t *testing.T) {
 	h := sha256.Sum256([]byte(verifier))
 	challenge := base64.RawURLEncoding.EncodeToString(h[:])
 
-	code := doAuthorize(t, s.Engine, config.Users, clientID, redirectURI, challenge, "S256")
+	code := doAuthorize(t, s.Engine, config.Users, clientID, redirectURI, "", challenge, "S256")
 	if code == "" {
 		t.Fatalf("no code returned from authorize")
 	}
@@ -221,6 +227,157 @@ func TestTokenIncludesUserClaims(t *testing.T) {
 	}
 	if profileClaim["tier"] != "gold" {
 		t.Fatalf("expected profile.tier 'gold', got %v", profileClaim["tier"])
+	}
+}
+
+func TestTokenIncludesNonce(t *testing.T) {
+	config := moccconfig.Config{
+		Users: []moccconfig.User{{
+			Sub:   "alice-123",
+			Email: "alice@example.com",
+		}},
+	}
+	ks := oidc.GenerateKeySet()
+	s := New(config, ks)
+
+	clientID := "test-client"
+	redirectURI := "http://localhost/cb"
+	nonce := "test-nonce-123"
+
+	code := doAuthorize(t, s.Engine, config.Users, clientID, redirectURI, nonce, "", "")
+	if code == "" {
+		t.Fatalf("no code returned from authorize")
+	}
+
+	w := doToken(t, s.Engine, code, clientID, "")
+	if w.Code != 200 {
+		body, _ := io.ReadAll(w.Body)
+		t.Fatalf("token exchange failed: %d %s", w.Code, string(body))
+	}
+
+	var resp struct {
+		IDToken string `json:"id_token"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.IDToken == "" {
+		t.Fatal("expected id_token in response")
+	}
+
+	parsed, err := jwt.Parse(resp.IDToken, func(token *jwt.Token) (interface{}, error) {
+		return ks.Public, nil
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()}))
+	if err != nil {
+		t.Fatalf("failed to parse token: %v", err)
+	}
+	claims, ok := parsed.Claims.(jwt.MapClaims)
+	if !ok {
+		t.Fatalf("unexpected claims type %T", parsed.Claims)
+	}
+	if claims["nonce"] != nonce {
+		t.Fatalf("expected nonce claim %q, got %v", nonce, claims["nonce"])
+	}
+}
+
+func TestTokenIncludesIatAndExp(t *testing.T) {
+	config := moccconfig.Config{
+		Users: []moccconfig.User{{
+			Sub:   "alice-123",
+			Email: "alice@example.com",
+		}},
+	}
+	ks := oidc.GenerateKeySet()
+	s := New(config, ks)
+
+	clientID := "test-client"
+	redirectURI := "http://localhost/cb"
+
+	code := doAuthorize(t, s.Engine, config.Users, clientID, redirectURI, "", "", "")
+	if code == "" {
+		t.Fatalf("no code returned from authorize")
+	}
+
+	w := doToken(t, s.Engine, code, clientID, "")
+	if w.Code != 200 {
+		body, _ := io.ReadAll(w.Body)
+		t.Fatalf("token exchange failed: %d %s", w.Code, string(body))
+	}
+
+	var resp struct {
+		IDToken string `json:"id_token"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.IDToken == "" {
+		t.Fatal("expected id_token in response")
+	}
+
+	parsed, err := jwt.Parse(resp.IDToken, func(token *jwt.Token) (interface{}, error) {
+		return ks.Public, nil
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()}))
+	if err != nil {
+		t.Fatalf("failed to parse token: %v", err)
+	}
+	claims, ok := parsed.Claims.(jwt.MapClaims)
+	if !ok {
+		t.Fatalf("unexpected claims type %T", parsed.Claims)
+	}
+	if _, ok := claims["iat"].(float64); !ok {
+		t.Fatalf("expected iat claim to be numeric, got %T", claims["iat"])
+	}
+	if _, ok := claims["exp"].(float64); !ok {
+		t.Fatalf("expected exp claim to be numeric, got %T", claims["exp"])
+	}
+}
+
+func TestTokenIncludesAuthTime(t *testing.T) {
+	config := moccconfig.Config{
+		Users: []moccconfig.User{{
+			Sub:   "alice-123",
+			Email: "alice@example.com",
+		}},
+	}
+	ks := oidc.GenerateKeySet()
+	s := New(config, ks)
+
+	clientID := "test-client"
+	redirectURI := "http://localhost/cb"
+
+	code := doAuthorize(t, s.Engine, config.Users, clientID, redirectURI, "", "", "")
+	if code == "" {
+		t.Fatalf("no code returned from authorize")
+	}
+
+	w := doToken(t, s.Engine, code, clientID, "")
+	if w.Code != 200 {
+		body, _ := io.ReadAll(w.Body)
+		t.Fatalf("token exchange failed: %d %s", w.Code, string(body))
+	}
+
+	var resp struct {
+		IDToken string `json:"id_token"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.IDToken == "" {
+		t.Fatal("expected id_token in response")
+	}
+
+	parsed, err := jwt.Parse(resp.IDToken, func(token *jwt.Token) (interface{}, error) {
+		return ks.Public, nil
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()}))
+	if err != nil {
+		t.Fatalf("failed to parse token: %v", err)
+	}
+	claims, ok := parsed.Claims.(jwt.MapClaims)
+	if !ok {
+		t.Fatalf("unexpected claims type %T", parsed.Claims)
+	}
+	if _, ok := claims["auth_time"].(float64); !ok {
+		t.Fatalf("expected auth_time claim to be numeric, got %T", claims["auth_time"])
 	}
 }
 
@@ -446,7 +603,7 @@ func TestUserInfoReturnsClaims(t *testing.T) {
 	hash := sha256.Sum256([]byte(verifier))
 	challenge := base64.RawURLEncoding.EncodeToString(hash[:])
 
-	code := doAuthorize(t, s.Engine, config.Users, clientID, redirectURI, challenge, "S256")
+	code := doAuthorize(t, s.Engine, config.Users, clientID, redirectURI, "", challenge, "S256")
 	if code == "" {
 		t.Fatalf("no code returned from authorize")
 	}

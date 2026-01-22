@@ -43,6 +43,8 @@ type authCodeData struct {
 	User                moccconfig.User
 	ClientID            string
 	ExpiresAt           time.Time
+	Nonce               string
+	AuthTime            int64
 	CodeChallenge       string
 	CodeChallengeMethod string
 }
@@ -176,6 +178,7 @@ func (s *Server) handleAuthorizePost(c *gin.Context) {
 	clientID := c.PostForm("client_id")
 	redirectURI := c.PostForm("redirect_uri")
 	state := c.PostForm("state")
+	nonce := c.PostForm("nonce")
 	codeChallenge := c.PostForm("code_challenge")
 	codeChallengeMethod := c.PostForm("code_challenge_method")
 	if sub == "" || clientID == "" || redirectURI == "" {
@@ -196,8 +199,17 @@ func (s *Server) handleAuthorizePost(c *gin.Context) {
 	b := make([]byte, 32)
 	rand.Read(b)
 	code := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(b)
+	authTime := time.Now().Unix()
 	s.authMux.Lock()
-	s.authCodes[code] = authCodeData{User: *user, ClientID: clientID, ExpiresAt: time.Now().Add(5 * time.Minute), CodeChallenge: codeChallenge, CodeChallengeMethod: codeChallengeMethod}
+	s.authCodes[code] = authCodeData{
+		User:                *user,
+		ClientID:            clientID,
+		ExpiresAt:           time.Now().Add(5 * time.Minute),
+		Nonce:               nonce,
+		AuthTime:            authTime,
+		CodeChallenge:       codeChallenge,
+		CodeChallengeMethod: codeChallengeMethod,
+	}
 	s.authMux.Unlock()
 	u, err := url.Parse(redirectURI)
 	if err != nil {
@@ -257,6 +269,12 @@ func (s *Server) handleToken(c *gin.Context) {
 	}
 	issuer := fmt.Sprintf("http://%s", c.Request.Host)
 	claims := jwt.MapClaims{"sub": auth.User.Sub, "email": auth.User.Email, "iss": issuer, "aud": clientID}
+	if auth.Nonce != "" {
+		claims["nonce"] = auth.Nonce
+	}
+	if auth.AuthTime > 0 {
+		claims["auth_time"] = auth.AuthTime
+	}
 	if auth.User.Name != "" {
 		claims["name"] = auth.User.Name
 	}

@@ -8,10 +8,11 @@ COPY . .
 
 ARG MOCC_VERSION=dev
 ENV CGO_ENABLED=0 GOOS=linux
-# Build the command located under cmd/mocc
-RUN go build -ldflags="-s -w -X main.version=${MOCC_VERSION}" -o /out/mocc ./cmd/mocc
+# Build with aggressive optimization for size
+RUN go build -trimpath -ldflags="-s -w -extldflags '-static' -X main.version=${MOCC_VERSION}" -tags netgo -o /out/mocc ./cmd/mocc
 RUN apk add --no-cache upx
-RUN upx --best --lzma /out/mocc
+# Use UPX brute force mode for maximum compression
+RUN upx --best --ultra-brute /out/mocc
 
 # Final stage: minimal image
 FROM scratch
