@@ -26,16 +26,5 @@
             "description": "Path to custom users.yaml file (e.g., /config/users.yaml)"
         }
     },
-    "containerEnv": {
-        "MOCC_PORT": "${port}",
-        "MOCC_USERS": "${users}"
-    },
-    "customizations": {
-        "vscode": {
-            "settings": {
-                "mocc.port": "${port}"
-            }
-        }
-    },
     "installsAfter": []
 }

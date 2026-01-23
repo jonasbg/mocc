@@ -71,7 +71,12 @@ echo "Attempting to download from: ${DOWNLOAD_URL}"
 if curl -fsSL "${DOWNLOAD_URL}" -o /tmp/mocc.tar.gz 2>/dev/null; then
     echo "Extracting binary..."
     tar -xzf /tmp/mocc.tar.gz -C /tmp
-    mv "/tmp/${BINARY_NAME}" "${INSTALL_DIR}/mocc"
+    # The tar contains 'mocc' (or 'mocc.exe' on windows), not the full platform name
+    if [ "${OS}" = "windows" ]; then
+        mv "/tmp/mocc.exe" "${INSTALL_DIR}/mocc.exe"
+    else
+        mv "/tmp/mocc" "${INSTALL_DIR}/mocc"
+    fi
     chmod +x "${INSTALL_DIR}/mocc"
     rm -f /tmp/mocc.tar.gz
     echo "MOCC installed successfully from release binary."
@@ -114,19 +119,30 @@ else
     echo "Warning: mocc not found in PATH after installation"
 fi
 
+# Persist MOCC configuration as environment variables
+mkdir -p /etc/profile.d
+cat > /etc/profile.d/mocc.sh << ENVSETUP
+# MOCC environment configuration
+export MOCC_PORT="${PORT}"
+export MOCC_USERS="${USERS}"
+ENVSETUP
+chmod +x /etc/profile.d/mocc.sh
+
 # Setup autostart if enabled
 if [ "${AUTOSTART}" = "true" ]; then
     echo "Setting up autostart..."
 
-    # Create a startup script
-    cat > /usr/local/bin/mocc-start.sh << 'STARTUP'
+    # Create a startup script with embedded defaults
+    cat > /usr/local/bin/mocc-start.sh << STARTUP
 #!/bin/bash
-MOCC_ARGS="--host 0.0.0.0 --port ${MOCC_PORT:-9999}"
-if [ -n "${MOCC_USERS}" ]; then
-    MOCC_ARGS="${MOCC_ARGS} --users ${MOCC_USERS}"
+MOCC_ARGS="--host 0.0.0.0 --port \${MOCC_PORT:-${PORT}}"
+if [ -n "\${MOCC_USERS}" ]; then
+    MOCC_ARGS="\${MOCC_ARGS} --users \${MOCC_USERS}"
+elif [ -n "${USERS}" ]; then
+    MOCC_ARGS="\${MOCC_ARGS} --users ${USERS}"
 fi
-nohup mocc ${MOCC_ARGS} > /tmp/mocc.log 2>&1 &
-echo "MOCC started on port ${MOCC_PORT:-9999}"
+nohup mocc \${MOCC_ARGS} > /tmp/mocc.log 2>&1 &
+echo "MOCC started on port \${MOCC_PORT:-${PORT}}"
 STARTUP
     chmod +x /usr/local/bin/mocc-start.sh
 
