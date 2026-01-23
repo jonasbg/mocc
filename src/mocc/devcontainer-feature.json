@@ -1,6 +1,6 @@
 {
     "id": "mocc",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "name": "MOCC - Minimal OpenID Connect Core",
     "documentationURL": "https://github.com/jonasbg/mocc",
     "description": "Installs MOCC, a lightweight mock OpenID Connect provider for local development and testing.",
