@@ -1,0 +1,41 @@
+{
+    "id": "mocc",
+    "version": "1.0.0",
+    "name": "MOCC - Minimal OpenID Connect Core",
+    "documentationURL": "https://github.com/jonasbg/mocc",
+    "description": "Installs MOCC, a lightweight mock OpenID Connect provider for local development and testing.",
+    "options": {
+        "version": {
+            "type": "string",
+            "default": "latest",
+            "description": "Version of MOCC to install (e.g., 'latest', 'v1.0.0')"
+        },
+        "port": {
+            "type": "string",
+            "default": "9999",
+            "description": "Port for MOCC to listen on"
+        },
+        "autostart": {
+            "type": "boolean",
+            "default": false,
+            "description": "Automatically start MOCC when the container starts"
+        },
+        "users": {
+            "type": "string",
+            "default": "",
+            "description": "Path to custom users.yaml file (e.g., /config/users.yaml)"
+        }
+    },
+    "containerEnv": {
+        "MOCC_PORT": "${port}",
+        "MOCC_USERS": "${users}"
+    },
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "mocc.port": "${port}"
+            }
+        }
+    },
+    "installsAfter": []
+}

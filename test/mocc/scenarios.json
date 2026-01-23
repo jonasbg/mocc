@@ -1,0 +1,17 @@
+{
+    "test": {
+        "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+        "features": {
+            "mocc": {}
+        }
+    },
+    "test_with_autostart": {
+        "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+        "features": {
+            "mocc": {
+                "autostart": true,
+                "port": "9998"
+            }
+        }
+    }
+}

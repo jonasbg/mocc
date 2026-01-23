@@ -49,6 +49,72 @@ oidc:
 
 For local development, this mock server accepts any client ID and secret to keep setup quick and simple.
 
+### DevContainer Feature
+
+Add MOCC as a [DevContainer Feature](https://containers.dev/implementors/features/) to automatically install it in your development container:
+
+```json
+{
+    "features": {
+        "ghcr.io/jonasbg/mocc/mocc:1": {}
+    }
+}
+```
+
+With options and port forwarding:
+
+```json
+{
+    "forwardPorts": [9999],
+    "features": {
+        "ghcr.io/jonasbg/mocc/mocc:1": {
+            "version": "latest",
+            "port": "9999",
+            "autostart": true
+        }
+    }
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `version` | string | `latest` | Version to install (e.g., `latest`, `v1.0.0`) |
+| `port` | string | `9999` | Port for MOCC to listen on |
+| `autostart` | boolean | `false` | Start MOCC automatically when container starts |
+| `users` | string | `` | Path to custom users.yaml file (e.g., `/config/users.yaml`) |
+
+When `autostart` is enabled, MOCC binds to `0.0.0.0` so it's accessible via port forwarding. If running manually inside the container, use `mocc --host 0.0.0.0` to expose it to the host.
+
+To use a custom users file from your repository, point to it within the workspace:
+
+```json
+{
+    "forwardPorts": [9999],
+    "features": {
+        "ghcr.io/jonasbg/mocc/mocc:1": {
+            "users": "${containerWorkspaceFolder}/users.yaml",
+            "autostart": true
+        }
+    }
+}
+```
+
+Alternatively, set the `MOCC_USERS` environment variable via `containerEnv`:
+
+```json
+{
+    "forwardPorts": [9999],
+    "containerEnv": {
+        "MOCC_USERS": "${containerWorkspaceFolder}/users.yaml"
+    },
+    "features": {
+        "ghcr.io/jonasbg/mocc/mocc:1": {
+            "autostart": true
+        }
+    }
+}
+```
+
 ### Build it yourself
 
 Prerequisites:
