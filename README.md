@@ -65,14 +65,21 @@ With options and port forwarding:
 
 ```json
 {
-    "forwardPorts": [9999],
     "features": {
         "ghcr.io/jonasbg/mocc/mocc:1": {
             "version": "latest",
             "port": "9999",
             "autostart": true
         }
-    }
+    },
+    // Silently open PORT
+    "portsAttributes": {
+        "9999": {
+          "label": "mOCC OIDC Provider",
+          "onAutoForward": "silent"
+        },
+      },    
+    "forwardPorts": [9999], //auto open ports into container
 }
 ```
 
