@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	texttemplate "text/template"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -31,17 +32,19 @@ import (
 )
 
 type Server struct {
-	Engine    *gin.Engine
-	Templates map[string]*template.Template
-	Users     []moccconfig.User
-	Keys      *oidc.KeySet
-	authCodes map[string]authCodeData
-	authMux   sync.Mutex
+	Engine        *gin.Engine
+	Templates     map[string]*template.Template
+	SkillTemplate *texttemplate.Template
+	Users         []moccconfig.User
+	Keys          *oidc.KeySet
+	authCodes     map[string]authCodeData
+	authMux       sync.Mutex
 }
 
 type authCodeData struct {
 	User                moccconfig.User
 	ClientID            string
+	RedirectURI         string
 	ExpiresAt           time.Time
 	Nonce               string
 	AuthTime            int64
@@ -52,14 +55,16 @@ type authCodeData struct {
 func New(config moccconfig.Config, keys *oidc.KeySet) *Server {
 	// load templates from embedded FS
 	t := templates.LoadTemplates()
+	st := templates.LoadSkillTemplate()
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
-	s := &Server{Engine: r, Templates: t, Users: config.Users, Keys: keys, authCodes: map[string]authCodeData{}}
+	s := &Server{Engine: r, Templates: t, SkillTemplate: st, Users: config.Users, Keys: keys, authCodes: map[string]authCodeData{}}
 
 	r.Use(gin.Recovery())
 	r.Use(requestLogger())
 	r.Use(CORS(config.ServerConfig.AllowOrigins))
 	r.Use(ignoreClientDisconnects())
+	r.Use(agentDiscoveryLinks())
 
 	// static handler: serve embedded assets first, then try several on-disk locations for dev
 	r.GET("/static/*any", func(c *gin.Context) {
@@ -121,6 +126,15 @@ func New(config moccconfig.Config, keys *oidc.KeySet) *Server {
 	r.GET("/jwks.json", s.handleJWKS)
 	r.GET("/userinfo", s.handleUserInfo)
 	r.GET("/.well-known/openid-configuration", s.handleDiscovery)
+
+	// Agent Skills Discovery (RFC 8615, Cloudflare agent-skills-discovery-rfc).
+	// Canonical locations:
+	r.GET("/.well-known/agent-skills/index.json", s.handleSkillsIndex)
+	r.GET("/.well-known/agent-skills/mocc-auth/SKILL.md", s.handleSkillMd)
+	// Friendly aliases redirect to the canonical SKILL.md location.
+	for _, p := range []string{"/SKILL.md", "/skill.md", "/skill", "/skills", "/skills.md"} {
+		r.GET(p, s.handleSkillRedirect)
+	}
 
 	return s
 }
@@ -204,6 +218,7 @@ func (s *Server) handleAuthorizePost(c *gin.Context) {
 	s.authCodes[code] = authCodeData{
 		User:                *user,
 		ClientID:            clientID,
+		RedirectURI:         redirectURI,
 		ExpiresAt:           time.Now().Add(5 * time.Minute),
 		Nonce:               nonce,
 		AuthTime:            authTime,
@@ -228,6 +243,7 @@ func (s *Server) handleAuthorizePost(c *gin.Context) {
 func (s *Server) handleToken(c *gin.Context) {
 	code := c.PostForm("code")
 	clientID := c.PostForm("client_id")
+	redirectURI := c.PostForm("redirect_uri")
 	codeVerifier := c.PostForm("code_verifier")
 	s.authMux.Lock()
 	auth, ok := s.authCodes[code]
@@ -243,6 +259,17 @@ func (s *Server) handleToken(c *gin.Context) {
 	}
 	delete(s.authCodes, code)
 	s.authMux.Unlock()
+	// Spec-forgiving checks: real OIDC providers reject these; mocc warns and
+	// proceeds so existing test harnesses keep working, but the deviation is
+	// visible in logs so bugs surface before hitting a hardened provider.
+	if redirectURI != "" && redirectURI != auth.RedirectURI {
+		log.Printf("[warn] /token redirect_uri %q does not match /authorize %q — a real provider would reject this", redirectURI, auth.RedirectURI)
+	} else if redirectURI == "" && auth.RedirectURI != "" {
+		log.Printf("[warn] /token missing redirect_uri — a real provider would reject this (expected %q)", auth.RedirectURI)
+	}
+	if auth.CodeChallenge == "" && codeVerifier != "" {
+		log.Printf("[warn] /token received code_verifier but /authorize had no code_challenge — a real provider would reject this")
+	}
 	if auth.CodeChallenge != "" {
 		if codeVerifier == "" {
 			c.String(400, "Missing code_verifier for PKCE-protected code")
@@ -658,6 +685,80 @@ func (s *Server) findUserBySub(sub string) *moccconfig.User {
 		}
 	}
 	return nil
+}
+
+// baseURL reconstructs the public base URL of the running instance from the
+// request. Honors X-Forwarded-Proto and X-Forwarded-Host so it behaves
+// correctly behind reverse proxies and devcontainer port forwarding.
+func (s *Server) baseURL(c *gin.Context) string {
+	scheme := "http"
+	if c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https") {
+		scheme = "https"
+	}
+	host := c.Request.Host
+	if fwdHost := c.GetHeader("X-Forwarded-Host"); fwdHost != "" {
+		// X-Forwarded-Host may be a comma-separated list; first value is the
+		// original client-facing host.
+		if i := strings.IndexByte(fwdHost, ','); i >= 0 {
+			fwdHost = fwdHost[:i]
+		}
+		host = strings.TrimSpace(fwdHost)
+	}
+	return scheme + "://" + host
+}
+
+func (s *Server) handleSkillMd(c *gin.Context) {
+	exampleEmail := "alice.admin@test.local"
+	if len(s.Users) > 0 {
+		exampleEmail = s.Users[0].Email
+	}
+	data := map[string]interface{}{
+		"BaseURL":      s.baseURL(c),
+		"Users":        s.Users,
+		"ExampleEmail": exampleEmail,
+	}
+	c.Header("Content-Type", "text/markdown; charset=utf-8")
+	c.Status(200)
+	if err := s.SkillTemplate.Execute(c.Writer, data); err != nil {
+		log.Printf("skill template execute: %v", err)
+	}
+}
+
+func (s *Server) handleSkillsIndex(c *gin.Context) {
+	base := s.baseURL(c)
+	c.JSON(200, gin.H{
+		"version": "1",
+		"skills": []gin.H{
+			{
+				"name":        "mocc-auth",
+				"description": "Authenticate against this mocc mock OIDC provider. Mint test tokens, run the authorization code flow, and pick a test user.",
+				"type":        "skill-md",
+				"url":         base + "/.well-known/agent-skills/mocc-auth/SKILL.md",
+			},
+		},
+	})
+}
+
+func (s *Server) handleSkillRedirect(c *gin.Context) {
+	c.Redirect(http.StatusFound, "/.well-known/agent-skills/mocc-auth/SKILL.md")
+}
+
+// agentDiscoveryLinks adds RFC 8288 Link headers advertising agent-discoverable
+// resources on every response. Extend the list as new rels are added
+// (e.g. agent-docs, agent-tools).
+func agentDiscoveryLinks() gin.HandlerFunc {
+	entries := []struct{ href, rel string }{
+		{"/.well-known/agent-skills/index.json", "agent-skills"},
+	}
+	parts := make([]string, 0, len(entries))
+	for _, e := range entries {
+		parts = append(parts, fmt.Sprintf(`<%s>; rel=%q`, e.href, e.rel))
+	}
+	header := strings.Join(parts, ", ")
+	return func(c *gin.Context) {
+		c.Writer.Header().Add("Link", header)
+		c.Next()
+	}
 }
 
 func CORS(origins []string) gin.HandlerFunc {

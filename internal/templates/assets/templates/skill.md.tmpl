@@ -1,0 +1,123 @@
+---
+name: mocc-auth
+description: Authenticate against the mocc mock OIDC provider for testing. Use when an agent needs a valid OIDC ID token (RS256 JWT), needs to run the authorization code flow, or needs to pick a test user to sign in as.
+---
+
+# mocc — mock OIDC provider for agents
+
+This instance is running at `{{.BaseURL}}`. It accepts **any** `client_id` and `client_secret`, so agents do not need credentials — they only need a test user email.
+
+## 1. Health check
+
+```bash
+curl -sf {{.BaseURL}}/.well-known/openid-configuration >/dev/null && echo "up" || echo "down"
+```
+
+## 2. Test users (live from this instance's users.yaml)
+
+{{if eq (len .Users) 0 -}}
+*No users configured on this instance.*
+{{- else -}}
+| Email | Name | Claims |
+|-------|------|--------|
+{{range .Users}}| `{{.Email}}` | {{.Name}} | {{formatClaims .Claims}} |
+{{end}}
+{{- end}}
+
+If you need a custom user or custom claims, edit `users.yaml` and restart mocc, or pass override claims in the direct-mint request body (see below).
+
+## 3. Get a token — the fast way (direct mint)
+
+Best for agents: skip the browser flow and mint a signed JWT directly.
+
+```bash
+curl -sX GET "{{.BaseURL}}/token/{{.ExampleEmail}}" \
+  -H "Content-Type: application/json" \
+  -d '{"aud":"my-client-id"}'
+```
+
+Response contains `token` (the signed RS256 JWT) and `claims` (decoded payload).
+
+Extract just the token:
+
+```bash
+TOKEN=$(curl -sX GET "{{.BaseURL}}/token/{{.ExampleEmail}}" \
+  -H "Content-Type: application/json" \
+  -d '{"aud":"my-client-id"}' | jq -r .token)
+
+curl -H "Authorization: Bearer $TOKEN" http://your-api/whoami
+```
+
+Override or add claims by including them in the JSON body:
+
+```bash
+curl -sX GET "{{.BaseURL}}/token/{{.ExampleEmail}}" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "aud": "my-client-id",
+        "roles": ["viewer"],
+        "custom": {"featureFlags": ["alpha"]}
+      }'
+```
+
+## 4. Get a token — the full authorization code flow (with PKCE)
+
+Use this when you are testing an actual OIDC client integration rather than the token itself.
+
+1. Generate a PKCE verifier/challenge:
+
+   ```bash
+   VERIFIER=$(openssl rand -base64 64 | tr -d '=+/' | cut -c1-64)
+   CHALLENGE=$(printf '%s' "$VERIFIER" | openssl dgst -sha256 -binary | openssl base64 | tr -d '=' | tr '/+' '_-')
+   ```
+
+2. Send the user to `/authorize`:
+
+   ```
+   GET {{.BaseURL}}/authorize
+     ?response_type=code
+     &client_id=any-client-id
+     &redirect_uri=http://localhost:5173/api/callback
+     &scope=openid+profile+email
+     &state=<state>
+     &code_challenge=<CHALLENGE>
+     &code_challenge_method=S256
+   ```
+
+   The user picks a test user on mocc's login page. mocc redirects to `redirect_uri` with `?code=...&state=...`.
+
+3. Exchange the code for tokens:
+
+   ```bash
+   curl -sX POST {{.BaseURL}}/token \
+     -H "Content-Type: application/x-www-form-urlencoded" \
+     -d "grant_type=authorization_code&code=$CODE&client_id=any-client-id&redirect_uri=http://localhost:5173/api/callback&code_verifier=$VERIFIER"
+   ```
+
+## 5. Verifying tokens
+
+- Issuer: `{{.BaseURL}}`
+- Discovery: `{{.BaseURL}}/.well-known/openid-configuration`
+- JWKS: `{{.BaseURL}}/jwks.json`
+- Algorithm: `RS256`
+
+Any OIDC client library pointed at the issuer above will discover the rest automatically.
+
+## 6. Endpoint cheat sheet
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /.well-known/openid-configuration` | Discovery document |
+| `GET /jwks.json` | Public signing keys |
+| `GET /authorize` | Start auth code flow (interactive) |
+| `POST /token` | Exchange code for tokens |
+| `GET /token/{email}` | Direct-mint a token for an existing user (agent-friendly) |
+| `GET /userinfo` | OIDC userinfo endpoint |
+| `GET /SKILL.md` | This document (dynamically generated) |
+
+## 7. Gotchas
+
+- `client_id` and `client_secret` are **not validated** — any value is accepted. Do not rely on mocc to reject bad clients.
+- Tokens are short-lived. Mint a new one rather than refreshing.
+- `GET /token/{email}` requires the email to exist in this instance's users.yaml. A 404 means you need to add the user or pick one from the table above.
+- Do not deploy this anywhere real. It is a mock.

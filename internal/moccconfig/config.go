@@ -122,10 +122,11 @@ func normalizeValue(v interface{}) interface{} {
 		}
 		return res
 	case []interface{}:
+		res := make([]interface{}, len(val))
 		for i := range val {
-			val[i] = normalizeValue(val[i])
+			res[i] = normalizeValue(val[i])
 		}
-		return val
+		return res
 	default:
 		return v
 	}

@@ -87,7 +87,7 @@ else
     if ! command -v go &> /dev/null; then
         echo "Go is not installed. Installing Go..."
         # Install Go if not present
-        GO_VERSION="1.22.0"
+        GO_VERSION="1.26.0"
         curl -fsSL "https://go.dev/dl/go${GO_VERSION}.${OS}-${ARCH}.tar.gz" -o /tmp/go.tar.gz
         tar -C /usr/local -xzf /tmp/go.tar.gz
         export PATH=$PATH:/usr/local/go/bin
