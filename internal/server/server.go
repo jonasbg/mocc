@@ -44,6 +44,7 @@ type Server struct {
 type authCodeData struct {
 	User                moccconfig.User
 	ClientID            string
+	RedirectURI         string
 	ExpiresAt           time.Time
 	Nonce               string
 	AuthTime            int64
@@ -217,6 +218,7 @@ func (s *Server) handleAuthorizePost(c *gin.Context) {
 	s.authCodes[code] = authCodeData{
 		User:                *user,
 		ClientID:            clientID,
+		RedirectURI:         redirectURI,
 		ExpiresAt:           time.Now().Add(5 * time.Minute),
 		Nonce:               nonce,
 		AuthTime:            authTime,
@@ -241,6 +243,7 @@ func (s *Server) handleAuthorizePost(c *gin.Context) {
 func (s *Server) handleToken(c *gin.Context) {
 	code := c.PostForm("code")
 	clientID := c.PostForm("client_id")
+	redirectURI := c.PostForm("redirect_uri")
 	codeVerifier := c.PostForm("code_verifier")
 	s.authMux.Lock()
 	auth, ok := s.authCodes[code]
@@ -256,6 +259,17 @@ func (s *Server) handleToken(c *gin.Context) {
 	}
 	delete(s.authCodes, code)
 	s.authMux.Unlock()
+	// Spec-forgiving checks: real OIDC providers reject these; mocc warns and
+	// proceeds so existing test harnesses keep working, but the deviation is
+	// visible in logs so bugs surface before hitting a hardened provider.
+	if redirectURI != "" && redirectURI != auth.RedirectURI {
+		log.Printf("[warn] /token redirect_uri %q does not match /authorize %q — a real provider would reject this", redirectURI, auth.RedirectURI)
+	} else if redirectURI == "" && auth.RedirectURI != "" {
+		log.Printf("[warn] /token missing redirect_uri — a real provider would reject this (expected %q)", auth.RedirectURI)
+	}
+	if auth.CodeChallenge == "" && codeVerifier != "" {
+		log.Printf("[warn] /token received code_verifier but /authorize had no code_challenge — a real provider would reject this")
+	}
 	if auth.CodeChallenge != "" {
 		if codeVerifier == "" {
 			c.String(400, "Missing code_verifier for PKCE-protected code")
@@ -674,14 +688,23 @@ func (s *Server) findUserBySub(sub string) *moccconfig.User {
 }
 
 // baseURL reconstructs the public base URL of the running instance from the
-// request. Honors X-Forwarded-Proto so it behaves correctly behind proxies
-// and devcontainer port forwarding.
+// request. Honors X-Forwarded-Proto and X-Forwarded-Host so it behaves
+// correctly behind reverse proxies and devcontainer port forwarding.
 func (s *Server) baseURL(c *gin.Context) string {
 	scheme := "http"
 	if c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https") {
 		scheme = "https"
 	}
-	return scheme + "://" + c.Request.Host
+	host := c.Request.Host
+	if fwdHost := c.GetHeader("X-Forwarded-Host"); fwdHost != "" {
+		// X-Forwarded-Host may be a comma-separated list; first value is the
+		// original client-facing host.
+		if i := strings.IndexByte(fwdHost, ','); i >= 0 {
+			fwdHost = fwdHost[:i]
+		}
+		host = strings.TrimSpace(fwdHost)
+	}
+	return scheme + "://" + host
 }
 
 func (s *Server) handleSkillMd(c *gin.Context) {
