@@ -1,10 +1,12 @@
 package templates
 
 import (
+	"encoding/json"
 	"html/template"
 	"io/fs"
 	"log"
 	"path/filepath"
+	texttemplate "text/template"
 )
 
 // LoadTemplates parses embedded templates and returns a map of base filename -> *template.Template
@@ -30,4 +32,30 @@ func LoadTemplates() map[string]*template.Template {
 		return nil
 	})
 	return tmpl
+}
+
+// LoadSkillTemplate parses the embedded SKILL.md markdown template using text/template
+// (html/template would escape the markdown). Exposes a `formatClaims` helper.
+func LoadSkillTemplate() *texttemplate.Template {
+	data, err := TemplatesFS.ReadFile("assets/templates/skill.md.tmpl")
+	if err != nil {
+		log.Fatalf("failed to read skill template: %v", err)
+	}
+	funcs := texttemplate.FuncMap{
+		"formatClaims": func(claims map[string]interface{}) string {
+			if len(claims) == 0 {
+				return "—"
+			}
+			b, err := json.Marshal(claims)
+			if err != nil {
+				return "—"
+			}
+			return "`" + string(b) + "`"
+		},
+	}
+	t, err := texttemplate.New("skill.md").Funcs(funcs).Parse(string(data))
+	if err != nil {
+		log.Fatalf("failed to parse skill template: %v", err)
+	}
+	return t
 }
