@@ -94,6 +94,8 @@ Once running, MOCC exposes standard OIDC endpoints:
 | `http://localhost:9999/token` | Token endpoint |
 | `http://localhost:9999/jwks.json` | JSON Web Key Set |
 | `http://localhost:9999/userinfo` | User info endpoint |
+| `http://localhost:9999/.well-known/agent-skills/index.json` | Agent-skills discovery index |
+| `http://localhost:9999/.well-known/agent-skills/mocc-auth/SKILL.md` | Agent skill for MOCC auth flows |
 
 ## Quick Token Generation
 
