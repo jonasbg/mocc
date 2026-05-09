@@ -5,7 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on "Keep a Changelog" and this project adheres to Semantic Versioning.
 
 ## [Unreleased]
-- ...existing code...
+
+## [v0.1.6] - 2026-05-09
+
+### Changed
+- Refactored server internals into focused auth, assets, logging, middleware, and skills modules.
+- Reduced duplicated token claim, user lookup, template rendering, PKCE, and static asset handling logic.
+- Bumped the Dev Container Feature metadata to `1.0.3`.
+
+### Fixed
+- Avoided sharing the HTTP server startup error variable across goroutines.
+- Handled authorization code entropy generation errors instead of ignoring them.
+- Rejected static asset path traversal attempts.
   
 ## [v0.1.3] - 2025-10-20
 

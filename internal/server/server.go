@@ -2,27 +2,19 @@ package server
 
 import (
 	"bytes"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
 	"io"
 	"log"
-	"mime"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	texttemplate "text/template"
 	"time"
 
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 
@@ -41,6 +33,13 @@ type Server struct {
 	authMux       sync.Mutex
 }
 
+const (
+	authCodeTTL = 5 * time.Minute
+
+	skillIndexPath = "/.well-known/agent-skills/index.json"
+	skillMDPath    = "/.well-known/agent-skills/mocc-auth/SKILL.md"
+)
+
 type authCodeData struct {
 	User                moccconfig.User
 	ClientID            string
@@ -53,71 +52,32 @@ type authCodeData struct {
 }
 
 func New(config moccconfig.Config, keys *oidc.KeySet) *Server {
-	// load templates from embedded FS
 	t := templates.LoadTemplates()
 	st := templates.LoadSkillTemplate()
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	s := &Server{Engine: r, Templates: t, SkillTemplate: st, Users: config.Users, Keys: keys, authCodes: map[string]authCodeData{}}
 
-	r.Use(gin.Recovery())
-	r.Use(requestLogger())
-	r.Use(CORS(config.ServerConfig.AllowOrigins))
-	r.Use(ignoreClientDisconnects())
-	r.Use(agentDiscoveryLinks())
+	s.configureMiddleware(config.ServerConfig.AllowOrigins)
+	s.registerRoutes()
 
-	// static handler: serve embedded assets first, then try several on-disk locations for dev
-	r.GET("/static/*any", func(c *gin.Context) {
-		path := c.Param("any")
-		if path == "" || path == "/" {
-			c.String(404, "")
-			return
-		}
-		clean := strings.TrimPrefix(path, "/")
+	return s
+}
 
-		// try embedded FS (assets/static/clean) first
-		if f, err := templates.TemplatesFS.Open("assets/static/" + clean); err == nil {
-			defer f.Close()
-			data, _ := io.ReadAll(f)
-			// prefer extension-based MIME type (css should be text/css)
-			ext := filepath.Ext(clean)
-			contentType := ""
-			if ext != "" {
-				contentType = mime.TypeByExtension(ext)
-			}
-			if contentType == "" {
-				contentType = http.DetectContentType(data)
-			}
-			c.Data(200, contentType, data)
-			return
-		}
+func (s *Server) configureMiddleware(allowOrigins []string) {
+	s.Engine.Use(gin.Recovery())
+	s.Engine.Use(requestLogger())
+	s.Engine.Use(CORS(allowOrigins))
+	s.Engine.Use(ignoreClientDisconnects())
+	s.Engine.Use(agentDiscoveryLinks())
+}
 
-		// fallback to on-disk locations (dev): check common candidate paths
-		candidates := []string{
-			"internal/templates/assets/static/" + clean,
-		}
-		for _, p := range candidates {
-			if df, derr := os.Open(p); derr == nil {
-				defer df.Close()
-				data, _ := io.ReadAll(df)
-				ext := filepath.Ext(p)
-				contentType := ""
-				if ext != "" {
-					contentType = mime.TypeByExtension(ext)
-				}
-				if contentType == "" {
-					contentType = http.DetectContentType(data)
-				}
-				c.Data(200, contentType, data)
-				return
-			}
-		}
+func (s *Server) registerRoutes() {
+	r := s.Engine
 
-		c.Status(404)
-	})
-
-	// routes
 	r.GET("/", s.handleIndex)
+	r.GET("/static/*any", s.handleStatic)
+
 	r.GET("/authorize", s.handleAuthorizeGet)
 	r.POST("/authorize", s.handleAuthorizePost)
 	r.POST("/token", s.handleToken)
@@ -127,35 +87,33 @@ func New(config moccconfig.Config, keys *oidc.KeySet) *Server {
 	r.GET("/userinfo", s.handleUserInfo)
 	r.GET("/.well-known/openid-configuration", s.handleDiscovery)
 
-	// Agent Skills Discovery (RFC 8615, Cloudflare agent-skills-discovery-rfc).
-	// Canonical locations:
-	r.GET("/.well-known/agent-skills/index.json", s.handleSkillsIndex)
-	r.GET("/.well-known/agent-skills/mocc-auth/SKILL.md", s.handleSkillMd)
-	// Friendly aliases redirect to the canonical SKILL.md location.
+	r.GET(skillIndexPath, s.handleSkillsIndex)
+	r.GET(skillMDPath, s.handleSkillMd)
 	for _, p := range []string{"/SKILL.md", "/skill.md", "/skill", "/skills", "/skills.md"} {
 		r.GET(p, s.handleSkillRedirect)
 	}
-
-	return s
 }
-
-// Handler implementations are intentionally compacted and reference Server state directly.
-// The full implementations follow previous behavior and use jwt via Keys.
 
 func (s *Server) handleLoginRedirect(c *gin.Context) {
 	u := url.URL{Path: "/authorize", RawQuery: c.Request.URL.RawQuery}
 	c.Redirect(302, u.String())
 }
 
-func (s *Server) handleIndex(c *gin.Context) {
-	t := s.Templates["index.html"]
+func (s *Server) renderHTML(c *gin.Context, name string, data interface{}) {
+	t := s.Templates[name]
 	if t == nil {
-		c.String(500, "template not found")
+		c.String(http.StatusInternalServerError, "template not found")
 		return
 	}
 	c.Header("Content-Type", "text/html; charset=utf-8")
-	c.Status(200)
-	t.ExecuteTemplate(c.Writer, "layout.html", gin.H{"Users": s.Users})
+	c.Status(http.StatusOK)
+	if err := t.ExecuteTemplate(c.Writer, "layout.html", data); err != nil {
+		log.Printf("template execute %s: %v", name, err)
+	}
+}
+
+func (s *Server) handleIndex(c *gin.Context) {
+	s.renderHTML(c, "index.html", gin.H{"Users": s.Users})
 }
 
 func (s *Server) handleAuthorizeGet(c *gin.Context) {
@@ -169,14 +127,7 @@ func (s *Server) handleAuthorizeGet(c *gin.Context) {
 		c.String(400, "Missing client_id or redirect_uri")
 		return
 	}
-	t := s.Templates["login.html"]
-	if t == nil {
-		c.String(500, "template not found")
-		return
-	}
-	c.Header("Content-Type", "text/html; charset=utf-8")
-	c.Status(200)
-	t.ExecuteTemplate(c.Writer, "layout.html", gin.H{
+	s.renderHTML(c, "login.html", gin.H{
 		"Users":               s.Users,
 		"ClientID":            clientID,
 		"RedirectURI":         redirectURI,
@@ -199,27 +150,23 @@ func (s *Server) handleAuthorizePost(c *gin.Context) {
 		c.String(400, "Missing parameters")
 		return
 	}
-	var user *moccconfig.User
-	for _, u := range s.Users {
-		if u.Email == sub {
-			user = &u
-			break
-		}
-	}
+	user := s.findUserByEmail(sub)
 	if user == nil {
 		c.String(400, "Invalid user")
 		return
 	}
-	b := make([]byte, 32)
-	rand.Read(b)
-	code := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(b)
+	code, err := newAuthCode()
+	if err != nil {
+		c.String(500, "Failed to generate authorization code")
+		return
+	}
 	authTime := time.Now().Unix()
 	s.authMux.Lock()
 	s.authCodes[code] = authCodeData{
 		User:                *user,
 		ClientID:            clientID,
 		RedirectURI:         redirectURI,
-		ExpiresAt:           time.Now().Add(5 * time.Minute),
+		ExpiresAt:           time.Now().Add(authCodeTTL),
 		Nonce:               nonce,
 		AuthTime:            authTime,
 		CodeChallenge:       codeChallenge,
@@ -270,42 +217,17 @@ func (s *Server) handleToken(c *gin.Context) {
 	if auth.CodeChallenge == "" && codeVerifier != "" {
 		log.Printf("[warn] /token received code_verifier but /authorize had no code_challenge — a real provider would reject this")
 	}
-	if auth.CodeChallenge != "" {
-		if codeVerifier == "" {
-			c.String(400, "Missing code_verifier for PKCE-protected code")
-			return
-		}
-		method := stringsToUpper(auth.CodeChallengeMethod)
-		switch method {
-		case "S256":
-			h := sha256.Sum256([]byte(codeVerifier))
-			computed := base64.RawURLEncoding.EncodeToString(h[:])
-			if computed != auth.CodeChallenge {
-				c.String(400, "Invalid code_verifier")
-				return
-			}
-		case "", "PLAIN":
-			if codeVerifier != auth.CodeChallenge {
-				c.String(400, "Invalid code_verifier")
-				return
-			}
-		default:
-			c.String(400, "Unsupported code_challenge_method")
-			return
-		}
+	if err := verifyPKCE(auth, codeVerifier); err != nil {
+		c.String(400, err.Error())
+		return
 	}
-	issuer := fmt.Sprintf("http://%s", c.Request.Host)
-	claims := jwt.MapClaims{"sub": auth.User.Sub, "email": auth.User.Email, "iss": issuer, "aud": clientID}
+	claims := tokenClaims(auth.User, issuer(c), clientID)
 	if auth.Nonce != "" {
 		claims["nonce"] = auth.Nonce
 	}
 	if auth.AuthTime > 0 {
 		claims["auth_time"] = auth.AuthTime
 	}
-	if auth.User.Name != "" {
-		claims["name"] = auth.User.Name
-	}
-	applyExtraClaims(claims, auth.User.Claims)
 	token, err := s.Keys.SignIDToken(claims)
 	if err != nil {
 		c.String(500, "Failed to sign token")
@@ -321,27 +243,12 @@ func (s *Server) handleTokenByEmail(c *gin.Context) {
 		c.String(400, "Missing email")
 		return
 	}
-	var selected *moccconfig.User
-	for i := range s.Users {
-		if s.Users[i].Email == email {
-			selected = &s.Users[i]
-			break
-		}
-	}
+	selected := s.findUserByEmail(email)
 	if selected == nil {
 		c.String(404, "User not found")
 		return
 	}
-	issuer := fmt.Sprintf("http://%s", c.Request.Host)
-	claims := jwt.MapClaims{
-		"sub":   selected.Sub,
-		"email": selected.Email,
-		"iss":   issuer,
-	}
-	if selected.Name != "" {
-		claims["name"] = selected.Name
-	}
-	applyExtraClaims(claims, selected.Claims)
+	claims := tokenClaims(*selected, issuer(c), "")
 	if c.Request.Body != nil {
 		body, err := io.ReadAll(c.Request.Body)
 		if err != nil {
@@ -436,7 +343,7 @@ func (s *Server) handleUserInfo(c *gin.Context) {
 }
 
 func (s *Server) handleDiscovery(c *gin.Context) {
-	issuer := fmt.Sprintf("http://%s", c.Request.Host)
+	issuer := issuer(c)
 	config := map[string]interface{}{
 		"issuer":                                issuer,
 		"authorization_endpoint":                issuer + "/authorize",
@@ -451,187 +358,6 @@ func (s *Server) handleDiscovery(c *gin.Context) {
 		"code_challenge_methods_supported":      []string{"S256", "plain"},
 	}
 	c.JSON(200, config)
-}
-
-// helper small wrappers to avoid extra imports in this patch
-func stringsToUpper(s string) string { return strings.ToUpper(s) }
-
-func applyExtraClaims(dst jwt.MapClaims, extras map[string]interface{}) {
-	if len(extras) == 0 || extras == nil {
-		return
-	}
-	for k, v := range extras {
-		dst[k] = v
-	}
-}
-
-const (
-	ansiReset = "\033[0m"
-	ansiBold  = "\033[1m"
-	ansiDim   = "\033[2m"
-
-	colorBlue    = "\033[38;5;39m"
-	colorGreen   = "\033[38;5;71m"
-	colorMagenta = "\033[38;5;171m"
-	colorCyan    = "\033[38;5;44m"
-	colorYellow  = "\033[38;5;221m"
-	colorRed     = "\033[38;5;203m"
-	colorGray    = "\033[38;5;246m"
-)
-
-type logDetailStyle struct {
-	key   string
-	value string
-}
-
-var (
-	defaultDetailStyle = logDetailStyle{key: ansiBold + colorGray, value: colorGray}
-	locationStyle      = logDetailStyle{key: ansiBold + colorCyan, value: colorCyan}
-	detailPalette      = map[string]logDetailStyle{
-		"response_type":         {key: ansiBold + colorCyan, value: colorCyan},
-		"client_id":             {key: ansiBold + colorMagenta, value: colorMagenta},
-		"redirect_uri":          {key: ansiBold + colorGreen, value: colorGreen},
-		"scope":                 {key: ansiBold + colorYellow, value: colorYellow},
-		"state":                 {key: ansiBold + colorBlue, value: colorBlue},
-		"nonce":                 {key: ansiBold + colorCyan, value: colorCyan},
-		"code_challenge":        {key: ansiBold + colorMagenta, value: colorMagenta},
-		"code_challenge_method": {key: ansiBold + colorGray, value: colorGray},
-		"grant_type":            {key: ansiBold + colorYellow, value: colorYellow},
-		"code":                  {key: ansiBold + colorBlue, value: colorBlue},
-		"code_verifier":         {key: ansiBold + colorGreen, value: colorGreen},
-	}
-)
-
-func wrapColor(text, color string) string {
-	if color == "" {
-		return text
-	}
-	return color + text + ansiReset
-}
-
-func formatDetail(key, value string) string {
-	style, ok := detailPalette[key]
-	if !ok {
-		if key == "location" {
-			style = locationStyle
-		} else {
-			style = defaultDetailStyle
-		}
-	}
-	return fmt.Sprintf("%s%s%s=%s%s%s", style.key, key, ansiReset, style.value, value, ansiReset)
-}
-
-func colorForMethod(method string) string {
-	switch method {
-	case http.MethodGet:
-		return ansiBold + colorCyan
-	case http.MethodPost:
-		return ansiBold + colorMagenta
-	case http.MethodPut, http.MethodPatch:
-		return ansiBold + colorYellow
-	case http.MethodDelete:
-		return ansiBold + colorRed
-	default:
-		return ansiBold + colorGray
-	}
-}
-
-func colorForStatus(status int) string {
-	switch {
-	case status >= 500:
-		return ansiBold + colorRed
-	case status >= 400:
-		return ansiBold + colorYellow
-	case status >= 300:
-		return ansiBold + colorCyan
-	default:
-		return ansiBold + colorGreen
-	}
-}
-
-func requestLogger() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// Only log OIDC-specific calls, ignore specified prefixes
-		path := c.Request.URL.Path
-		ignorePrefixes := []string{"/static/", "/favicon"}
-		if path == "/" {
-			return
-		}
-		for _, prefix := range ignorePrefixes {
-			if strings.HasPrefix(path, prefix) {
-				return
-			}
-		}
-		c.Next()
-
-		method := c.Request.Method
-		status := c.Writer.Status()
-		details := make([]string, 0)
-
-		// Log all query parameters
-		for key, values := range c.Request.URL.Query() {
-			for _, val := range values {
-				details = append(details, formatDetail(key, truncateDisplay(val, 60)))
-			}
-		}
-
-		// Log all form parameters
-		if c.Request.Method == "POST" {
-			c.Request.ParseForm()
-			for key, values := range c.Request.PostForm {
-				for _, val := range values {
-					details = append(details, formatDetail(key, truncateDisplay(val, 60)))
-				}
-			}
-		}
-
-		// Log Location header if present
-		if loc := c.Writer.Header().Get("Location"); loc != "" {
-			details = append(details, formatDetail("location", truncateDisplay(loc, 80)))
-		}
-
-		methodStr := wrapColor(method, colorForMethod(method))
-		pathStr := wrapColor(path, ansiDim+colorGray)
-		statusStr := wrapColor(fmt.Sprintf("%d", status), colorForStatus(status))
-
-		msg := fmt.Sprintf("%s %s -> %s", methodStr, pathStr, statusStr)
-		if len(details) > 0 {
-			msg = fmt.Sprintf("%s [%s]", msg, strings.Join(details, " "))
-		}
-
-		log.Println(msg)
-	}
-}
-
-func ignoreClientDisconnects() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.Next()
-		if len(c.Errors) == 0 {
-			return
-		}
-		filtered := c.Errors[:0]
-		for _, err := range c.Errors {
-			if errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNRESET) {
-				continue
-			}
-			filtered = append(filtered, err)
-		}
-		c.Errors = filtered
-	}
-}
-
-func truncateDisplay(val string, limit int) string {
-	if limit <= 0 {
-		return ""
-	}
-	runes := []rune(val)
-	if len(runes) <= limit {
-		return val
-	}
-	if limit == 1 {
-		return string(runes[0])
-	}
-	return string(runes[:limit-1]) + "…"
 }
 
 func extractBearerToken(r *http.Request) (string, error) {
@@ -687,89 +413,11 @@ func (s *Server) findUserBySub(sub string) *moccconfig.User {
 	return nil
 }
 
-// baseURL reconstructs the public base URL of the running instance from the
-// request. Honors X-Forwarded-Proto and X-Forwarded-Host so it behaves
-// correctly behind reverse proxies and devcontainer port forwarding.
-func (s *Server) baseURL(c *gin.Context) string {
-	scheme := "http"
-	if c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https") {
-		scheme = "https"
-	}
-	host := c.Request.Host
-	if fwdHost := c.GetHeader("X-Forwarded-Host"); fwdHost != "" {
-		// X-Forwarded-Host may be a comma-separated list; first value is the
-		// original client-facing host.
-		if i := strings.IndexByte(fwdHost, ','); i >= 0 {
-			fwdHost = fwdHost[:i]
+func (s *Server) findUserByEmail(email string) *moccconfig.User {
+	for i := range s.Users {
+		if s.Users[i].Email == email {
+			return &s.Users[i]
 		}
-		host = strings.TrimSpace(fwdHost)
 	}
-	return scheme + "://" + host
-}
-
-func (s *Server) handleSkillMd(c *gin.Context) {
-	exampleEmail := "alice.admin@test.local"
-	if len(s.Users) > 0 {
-		exampleEmail = s.Users[0].Email
-	}
-	data := map[string]interface{}{
-		"BaseURL":      s.baseURL(c),
-		"Users":        s.Users,
-		"ExampleEmail": exampleEmail,
-	}
-	c.Header("Content-Type", "text/markdown; charset=utf-8")
-	c.Status(200)
-	if err := s.SkillTemplate.Execute(c.Writer, data); err != nil {
-		log.Printf("skill template execute: %v", err)
-	}
-}
-
-func (s *Server) handleSkillsIndex(c *gin.Context) {
-	base := s.baseURL(c)
-	c.JSON(200, gin.H{
-		"version": "1",
-		"skills": []gin.H{
-			{
-				"name":        "mocc-auth",
-				"description": "Authenticate against this mocc mock OIDC provider. Mint test tokens, run the authorization code flow, and pick a test user.",
-				"type":        "skill-md",
-				"url":         base + "/.well-known/agent-skills/mocc-auth/SKILL.md",
-			},
-		},
-	})
-}
-
-func (s *Server) handleSkillRedirect(c *gin.Context) {
-	c.Redirect(http.StatusFound, "/.well-known/agent-skills/mocc-auth/SKILL.md")
-}
-
-// agentDiscoveryLinks adds RFC 8288 Link headers advertising agent-discoverable
-// resources on every response. Extend the list as new rels are added
-// (e.g. agent-docs, agent-tools).
-func agentDiscoveryLinks() gin.HandlerFunc {
-	entries := []struct{ href, rel string }{
-		{"/.well-known/agent-skills/index.json", "agent-skills"},
-	}
-	parts := make([]string, 0, len(entries))
-	for _, e := range entries {
-		parts = append(parts, fmt.Sprintf(`<%s>; rel=%q`, e.href, e.rel))
-	}
-	header := strings.Join(parts, ", ")
-	return func(c *gin.Context) {
-		c.Writer.Header().Add("Link", header)
-		c.Next()
-	}
-}
-
-func CORS(origins []string) gin.HandlerFunc {
-	corsConfig := cors.DefaultConfig()
-	//corsConfig.AllowCredentials = true
-
-	if len(origins) == 0 {
-		origins = []string{"*"}
-	}
-	corsConfig.AllowOrigins = origins
-
-	corsConfig.AddAllowHeaders("authorization")
-	return cors.New(corsConfig)
+	return nil
 }

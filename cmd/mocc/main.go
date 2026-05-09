@@ -63,14 +63,11 @@ func main() {
 		Addr:    addr,
 		Handler: s.Engine,
 	}
-	chanHttpErr := make(chan error)
+	httpErr := make(chan error, 1)
 
 	go func() {
-		err = httpServ.ListenAndServe()
-		if err != nil {
-			if !errors.Is(err, http.ErrServerClosed) {
-				chanHttpErr <- err
-			}
+		if err := httpServ.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			httpErr <- err
 		}
 	}()
 
@@ -78,8 +75,6 @@ func main() {
 	defer stop()
 
 	select {
-	// if we are toldt to abort, initate gracefull shutdown of the http
-	// server
 	case <-ctx.Done():
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -92,8 +87,7 @@ func main() {
 
 		fmt.Println("\nWork done? Well MOCC again tomorrow!")
 		os.Exit(0)
-	// handle unexpected errors from the http server
-	case <-chanHttpErr:
+	case err := <-httpErr:
 		log.Println("server closed unexpectedly:", err)
 		os.Exit(1)
 	}

@@ -889,6 +889,18 @@ func TestStaticCSSServed(t *testing.T) {
 	}
 }
 
+func TestStaticRejectsPathTraversal(t *testing.T) {
+	s := New(moccconfig.Config{Users: []moccconfig.User{{Name: "Alice", Email: "alice@example.com"}}}, oidc.GenerateKeySet())
+
+	req := httptest.NewRequest("GET", "/static/../users.yaml", nil)
+	w := httptest.NewRecorder()
+	s.Engine.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for path traversal, got %d", w.Code)
+	}
+}
+
 func TestIndexTemplateRendering(t *testing.T) {
 	users := []moccconfig.User{{Name: "Alice Example", Email: "alice@example.com"}}
 	config := moccconfig.Config{
