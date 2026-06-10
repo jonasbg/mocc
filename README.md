@@ -56,7 +56,7 @@ Add MOCC as a [DevContainer Feature](https://containers.dev/implementors/feature
 ```json
 {
     "features": {
-        "ghcr.io/jonasbg/mocc/mocc:1": {}
+        "ghcr.io/jonasbg/mocc-feature/mocc:1": {}
     }
 }
 ```
@@ -66,7 +66,7 @@ With options and port forwarding:
 ```json
 {
     "features": {
-        "ghcr.io/jonasbg/mocc/mocc:1": {
+        "ghcr.io/jonasbg/mocc-feature/mocc:1": {
             "version": "latest",
             "port": "9999",
             "autostart": true
@@ -98,7 +98,7 @@ To use a custom users file from your repository, point to it within the workspac
 {
     "forwardPorts": [9999],
     "features": {
-        "ghcr.io/jonasbg/mocc/mocc:1": {
+        "ghcr.io/jonasbg/mocc-feature/mocc:1": {
             "users": "${containerWorkspaceFolder}/users.yaml",
             "autostart": true
         }
@@ -115,7 +115,7 @@ Alternatively, set the `MOCC_USERS` environment variable via `containerEnv`:
         "MOCC_USERS": "${containerWorkspaceFolder}/users.yaml"
     },
     "features": {
-        "ghcr.io/jonasbg/mocc/mocc:1": {
+        "ghcr.io/jonasbg/mocc-feature/mocc:1": {
             "autostart": true
         }
     }

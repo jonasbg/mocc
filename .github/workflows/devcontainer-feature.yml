@@ -27,6 +27,12 @@ jobs:
           publish-features: "true"
           base-path-to-features: "./src"
           generate-docs: "true"
+          # Publish the feature under a dedicated namespace so its
+          # devcontainer-collection.json artifact does not collide with the
+          # Docker image at the repo root (ghcr.io/<owner>/mocc). Without this,
+          # the collection overwrites the image's `latest` tag and breaks
+          # `docker pull` / `docker compose pull`.
+          features-namespace: "${{ github.repository_owner }}/mocc-feature"
 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

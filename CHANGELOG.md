@@ -6,6 +6,12 @@ The format is based on "Keep a Changelog" and this project adheres to Semantic V
 
 ## [Unreleased]
 
+### Fixed
+- Stopped the Dev Container Feature publish from clobbering the Docker image's `latest` tag. The feature now publishes under a dedicated namespace (`ghcr.io/jonasbg/mocc-feature/mocc`) so its `devcontainer-collection.json` artifact no longer overwrites `ghcr.io/jonasbg/mocc:latest`, which had been breaking `docker pull` / `docker compose pull`.
+
+### Changed
+- Dev Container Feature reference moved from `ghcr.io/jonasbg/mocc/mocc:1` to `ghcr.io/jonasbg/mocc-feature/mocc:1`. Update `devcontainer.json` files accordingly; previously published versions remain resolvable at the old path.
+
 ## [v0.1.6] - 2026-05-09
 
 ### Changed
