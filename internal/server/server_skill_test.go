@@ -153,6 +153,7 @@ func captureLog(t *testing.T) *bytes.Buffer {
 func runAuthorizeCodeFlow(t *testing.T, s *Server, clientID, redirectURI, codeChallenge string) string {
 	t.Helper()
 	v := url.Values{}
+	v.Set("response_type", "code")
 	v.Set("client_id", clientID)
 	v.Set("redirect_uri", redirectURI)
 	if codeChallenge != "" {
@@ -258,6 +259,7 @@ func TestToken_RedirectURIMatch_NoWarn(t *testing.T) {
 	code := runAuthorizeCodeFlow(t, s, clientID, redirectURI, challenge)
 
 	form := url.Values{}
+	form.Set("grant_type", "authorization_code")
 	form.Set("code", code)
 	form.Set("client_id", clientID)
 	form.Set("redirect_uri", redirectURI)

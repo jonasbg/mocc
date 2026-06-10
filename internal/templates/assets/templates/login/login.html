@@ -1,6 +1,6 @@
 {{template "layout.html" .}}
 
-{{define "title"}}Login - Gotiny OIDC Mock{{end}}
+{{define "title"}}Login - mocc{{end}}
 
 {{define "content"}}
 <header class="hero card">
@@ -29,7 +29,7 @@
   <ul class="user-grid login-user-grid">
     {{range .Users}}
     <li class="user-item">
-      <button type="submit" name="sub" value="{{.Email}}" class="user-token-trigger login-user-button">
+      <button type="submit" name="email" value="{{.Email}}" class="user-token-trigger login-user-button">
         <div class="user-avatar">{{.Initials}}</div>
         <div class="user-meta">
           <div class="user-name">{{.Name}}</div>

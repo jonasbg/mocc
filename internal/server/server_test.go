@@ -1004,3 +1004,115 @@ func TestTruncateDisplay(t *testing.T) {
 		}
 	}
 }
+
+func TestHandleToken_ClientSecretBasic(t *testing.T) {
+	config := moccconfig.Config{
+		Users: []moccconfig.User{{Name: "Alice", Email: "alice@example.com"}},
+	}
+	ks := oidc.GenerateKeySet()
+	s := New(config, ks)
+
+	code := doAuthorize(t, s.Engine, config.Users, "basic-client", "http://localhost/cb", "", "", "")
+
+	// client_id only via HTTP Basic auth, as client_secret_basic libraries do.
+	form := url.Values{}
+	form.Set("grant_type", "authorization_code")
+	form.Set("code", code)
+	form.Set("redirect_uri", "http://localhost/cb")
+	req := httptest.NewRequest("POST", "/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth("basic-client", "irrelevant-secret")
+	w := httptest.NewRecorder()
+	s.Engine.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200 with Basic auth client_id, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		IDToken   string `json:"id_token"`
+		ExpiresIn int    `json:"expires_in"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response should decode with numeric expires_in: %v (%s)", err, w.Body.String())
+	}
+	if resp.ExpiresIn != 300 {
+		t.Fatalf("expected expires_in 300, got %d", resp.ExpiresIn)
+	}
+
+	parsed, err := jwt.Parse(resp.IDToken, func(token *jwt.Token) (interface{}, error) {
+		return ks.Public, nil
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()}))
+	if err != nil {
+		t.Fatalf("failed to parse token: %v", err)
+	}
+	claims := parsed.Claims.(jwt.MapClaims)
+	if claims["aud"] != "basic-client" {
+		t.Fatalf("expected aud 'basic-client', got %v", claims["aud"])
+	}
+}
+
+func TestHandleToken_ErrorIsOAuthJSON(t *testing.T) {
+	config := moccconfig.Config{
+		Users: []moccconfig.User{{Name: "Alice", Email: "alice@example.com"}},
+	}
+	s := New(config, oidc.GenerateKeySet())
+
+	w := doToken(t, s.Engine, "no-such-code", "test-client", "")
+	if w.Code != 400 {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+	var resp struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("error body should be JSON per RFC 6749: %v (%s)", err, w.Body.String())
+	}
+	if resp.Error != "invalid_grant" {
+		t.Fatalf("expected error 'invalid_grant', got %q", resp.Error)
+	}
+}
+
+func TestHandleDiscovery_ForwardedProto(t *testing.T) {
+	config := moccconfig.Config{
+		Users: []moccconfig.User{{Name: "Alice", Email: "alice@example.com"}},
+	}
+	s := New(config, oidc.GenerateKeySet())
+
+	req := httptest.NewRequest("GET", "/.well-known/openid-configuration", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-Forwarded-Host", "mocc.example.com")
+	w := httptest.NewRecorder()
+	s.Engine.ServeHTTP(w, req)
+
+	var discovery map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &discovery); err != nil {
+		t.Fatalf("failed to unmarshal discovery: %v", err)
+	}
+	if got := discovery["issuer"]; got != "https://mocc.example.com" {
+		t.Fatalf("expected issuer https://mocc.example.com, got %v", got)
+	}
+}
+
+func TestHandleTokenByEmail_AudQueryParam(t *testing.T) {
+	config := moccconfig.Config{
+		Users: []moccconfig.User{{Name: "Alice", Email: "alice@example.com"}},
+	}
+	s := New(config, oidc.GenerateKeySet())
+
+	req := httptest.NewRequest("GET", "/token/alice@example.com?aud=my-api", nil)
+	w := httptest.NewRecorder()
+	s.Engine.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Claims map[string]interface{} `json:"claims"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Claims["aud"] != "my-api" {
+		t.Fatalf("expected aud claim 'my-api', got %v", resp.Claims["aud"])
+	}
+}
