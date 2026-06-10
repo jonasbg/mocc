@@ -4,13 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on "Keep a Changelog" and this project adheres to Semantic Versioning.
 
-## [Unreleased]
+## [v0.1.7] - 2026-06-10
 
-### Fixed
-- Stopped the Dev Container Feature publish from clobbering the Docker image's `latest` tag. The feature now publishes under a dedicated namespace (`ghcr.io/jonasbg/mocc-feature/mocc`) so its `devcontainer-collection.json` artifact no longer overwrites `ghcr.io/jonasbg/mocc:latest`, which had been breaking `docker pull` / `docker compose pull`.
+### Added
+- `client_secret_basic` support at `/token`: `client_id` is read from HTTP Basic auth with form fallback, matching what most OIDC client libraries send by default.
+- `?aud=` query parameter on `/token/{email}` to mint ID tokens with an audience without a JSON body.
+- `grant_types_supported` in the discovery document.
+- Spec-deviation `[warn]` logs for missing/wrong `grant_type` and `response_type`, mismatched `client_id`, and PKCE `plain` usage — the flow always proceeds.
 
 ### Changed
+- Mismatched `client_id` at `/token` now warns and proceeds instead of rejecting; the token's `aud` always comes from the validated `/authorize` request.
+- Login form field renamed from `sub` to `email`; the old name is still accepted.
 - Dev Container Feature reference moved from `ghcr.io/jonasbg/mocc/mocc:1` to `ghcr.io/jonasbg/mocc-feature/mocc:1`. Update `devcontainer.json` files accordingly; previously published versions remain resolvable at the old path.
+
+### Fixed
+- Issuer derivation now honors TLS and `X-Forwarded-Proto`/`X-Forwarded-Host` everywhere, so `iss` and the discovery document match what clients see behind an HTTPS proxy.
+- `/token` errors are RFC 6749 JSON (`{"error":"invalid_grant",…}`) and `expires_in` is a number, fixing strict client parsers.
+- Expired authorization codes are purged instead of accumulating for the lifetime of the process.
+- Stopped the Dev Container Feature publish from clobbering the Docker image's `latest` tag. The feature now publishes under a dedicated namespace (`ghcr.io/jonasbg/mocc-feature/mocc`) so its `devcontainer-collection.json` artifact no longer overwrites `ghcr.io/jonasbg/mocc:latest`, which had been breaking `docker pull` / `docker compose pull`.
 
 ## [v0.1.6] - 2026-05-09
 

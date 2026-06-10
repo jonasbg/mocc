@@ -25,17 +25,19 @@ Keep it simple — the server ships as a tiny binary (<5MB) and a small `users.y
 
 - Authorization code flow (mock login)
 - Issues RS256-signed ID tokens
-- Exposes `/jwks.json` and `/.well-known/openid-configuration`
+- Exposes `/jwks.json`, `/userinfo` and `/.well-known/openid-configuration`
 - Simple YAML-based user configuration (`users.yaml`)
 - Small Docker image (final image uses `FROM scratch`)
 - PKCE supported (S256 recommended; 'plain' allowed for testing only, with warning)
+- Spec-forgiving: requests a real provider would reject (wrong `grant_type`, mismatched `redirect_uri` or `client_id`, …) succeed with a `[warn]` log, so bugs surface without blocking you
+- Client authentication via `client_secret_basic` or `none` — any client ID and secret are accepted
 
 ## Get Started
 
 ### git going fast
 
 ```bash
-docker run -d --port 9999:9999 ghcr.io/jonasbg/mocc
+docker run -d -p 9999:9999 ghcr.io/jonasbg/mocc
 ```
 
 Then use the localhost:9999 as oidc provider in your config such as:
@@ -239,6 +241,7 @@ Login page
 - Authorization endpoint: /authorize
 - Token endpoint: /token
 - Direct token minting: /token/{email}
+- UserInfo endpoint: /userinfo
 - JWKS endpoint: /jwks.json
 - Discovery: /.well-known/openid-configuration
 
@@ -262,14 +265,20 @@ GET /authorize?response_type=code&client_id=your-client&redirect_uri=http://loca
 POST /token
 Content-Type: application/x-www-form-urlencoded
 
-code=<code>&client_id=your-client&code_verifier=<the-original-verifier>
+grant_type=authorization_code&code=<code>&client_id=your-client&redirect_uri=http://localhost/cb&code_verifier=<the-original-verifier>
 ```
+
+The `client_id` may instead be sent via HTTP Basic auth (`client_secret_basic`), which many OIDC client libraries use by default.
 
 If you use `plain` as `code_challenge_method`, the server will accept it but will log a warning advising to use S256 instead.
 
 ## Direct token minting
 
-For quick manual testing, you can mint a token for a known user without running the full authorization flow. Call `GET /token/{email}` with the target email from `users.yaml`. You can optionally include a JSON body containing extra claims you want to override or add.
+For quick manual testing, you can mint a token for a known user without running the full authorization flow. Call `GET /token/{email}` with the target email from `users.yaml`. Set the audience with `?aud=my-client-id`, or include a JSON body containing extra claims you want to override or add.
+
+```bash
+curl "http://localhost:9999/token/alice@example.com?aud=my-client-id"
+```
 
 ```bash
 curl \
