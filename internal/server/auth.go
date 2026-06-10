@@ -5,10 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
-	"fmt"
+	"log"
 	"strings"
 
-	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 
 	"mocc/internal/moccconfig"
@@ -34,20 +33,17 @@ func verifyPKCE(auth authCodeData, codeVerifier string) error {
 	case "S256":
 		h := sha256.Sum256([]byte(codeVerifier))
 		if base64.RawURLEncoding.EncodeToString(h[:]) != auth.CodeChallenge {
-			return errors.New("Invalid code_verifier")
+			return errors.New("invalid code_verifier")
 		}
 	case "", "PLAIN":
+		log.Printf("[warn] PKCE code_challenge_method %q in use — prefer S256; 'plain' is for testing only", auth.CodeChallengeMethod)
 		if codeVerifier != auth.CodeChallenge {
-			return errors.New("Invalid code_verifier")
+			return errors.New("invalid code_verifier")
 		}
 	default:
-		return errors.New("Unsupported code_challenge_method")
+		return errors.New("unsupported code_challenge_method")
 	}
 	return nil
-}
-
-func issuer(c *gin.Context) string {
-	return fmt.Sprintf("http://%s", c.Request.Host)
 }
 
 func tokenClaims(user moccconfig.User, issuer, audience string) jwt.MapClaims {
@@ -67,9 +63,6 @@ func tokenClaims(user moccconfig.User, issuer, audience string) jwt.MapClaims {
 }
 
 func applyExtraClaims(dst jwt.MapClaims, extras map[string]interface{}) {
-	if len(extras) == 0 || extras == nil {
-		return
-	}
 	for k, v := range extras {
 		dst[k] = v
 	}

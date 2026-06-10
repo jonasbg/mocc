@@ -38,6 +38,8 @@ curl -sX GET "{{.BaseURL}}/token/{{.ExampleEmail}}" \
 
 Response contains `token` (the signed RS256 JWT) and `claims` (decoded payload).
 
+No body needed for the common case — set the audience with a query parameter instead: `{{.BaseURL}}/token/{{.ExampleEmail}}?aud=my-client-id`.
+
 Extract just the token:
 
 ```bash

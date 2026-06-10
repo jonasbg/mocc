@@ -23,10 +23,6 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	//Host string `yaml:"host"`
-	//Port int    `yaml:"port"`
-	//TLSCertPath  string `yaml:"tls_cert_path"`
-	//TLSKeyPath   string `yaml:"tls_key_path"`
 	AllowOrigins []string `yaml:"allow_origins"`
 }
 

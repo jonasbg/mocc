@@ -96,7 +96,7 @@ func (s *Server) registerRoutes() {
 
 func (s *Server) handleLoginRedirect(c *gin.Context) {
 	u := url.URL{Path: "/authorize", RawQuery: c.Request.URL.RawQuery}
-	c.Redirect(302, u.String())
+	c.Redirect(http.StatusFound, u.String())
 }
 
 func (s *Server) renderHTML(c *gin.Context, name string, data interface{}) {
@@ -116,41 +116,59 @@ func (s *Server) handleIndex(c *gin.Context) {
 	s.renderHTML(c, "index.html", gin.H{"Users": s.Users})
 }
 
+type authorizeParams struct {
+	ClientID            string
+	RedirectURI         string
+	State               string
+	Nonce               string
+	CodeChallenge       string
+	CodeChallengeMethod string
+}
+
+// readAuthorizeParams extracts the shared /authorize parameters using the
+// provided getter (c.Query for GET, c.PostForm for POST).
+func readAuthorizeParams(get func(string) string) authorizeParams {
+	return authorizeParams{
+		ClientID:            get("client_id"),
+		RedirectURI:         get("redirect_uri"),
+		State:               get("state"),
+		Nonce:               get("nonce"),
+		CodeChallenge:       get("code_challenge"),
+		CodeChallengeMethod: get("code_challenge_method"),
+	}
+}
+
 func (s *Server) handleAuthorizeGet(c *gin.Context) {
-	clientID := c.Query("client_id")
-	redirectURI := c.Query("redirect_uri")
-	state := c.Query("state")
-	nonce := c.Query("nonce")
-	codeChallenge := c.Query("code_challenge")
-	codeChallengeMethod := c.Query("code_challenge_method")
-	if clientID == "" || redirectURI == "" {
+	p := readAuthorizeParams(c.Query)
+	if p.ClientID == "" || p.RedirectURI == "" {
 		c.String(400, "Missing client_id or redirect_uri")
 		return
 	}
+	if rt := c.Query("response_type"); rt != "code" {
+		log.Printf("[warn] /authorize response_type=%q (expected \"code\") — a real provider would reject this", rt)
+	}
 	s.renderHTML(c, "login.html", gin.H{
 		"Users":               s.Users,
-		"ClientID":            clientID,
-		"RedirectURI":         redirectURI,
-		"State":               state,
-		"Nonce":               nonce,
-		"CodeChallenge":       codeChallenge,
-		"CodeChallengeMethod": codeChallengeMethod,
+		"ClientID":            p.ClientID,
+		"RedirectURI":         p.RedirectURI,
+		"State":               p.State,
+		"Nonce":               p.Nonce,
+		"CodeChallenge":       p.CodeChallenge,
+		"CodeChallengeMethod": p.CodeChallengeMethod,
 	})
 }
 
 func (s *Server) handleAuthorizePost(c *gin.Context) {
-	sub := c.PostForm("sub")
-	clientID := c.PostForm("client_id")
-	redirectURI := c.PostForm("redirect_uri")
-	state := c.PostForm("state")
-	nonce := c.PostForm("nonce")
-	codeChallenge := c.PostForm("code_challenge")
-	codeChallengeMethod := c.PostForm("code_challenge_method")
-	if sub == "" || clientID == "" || redirectURI == "" {
+	p := readAuthorizeParams(c.PostForm)
+	email := c.PostForm("email")
+	if email == "" {
+		email = c.PostForm("sub") // legacy field name, kept for existing harnesses
+	}
+	if email == "" || p.ClientID == "" || p.RedirectURI == "" {
 		c.String(400, "Missing parameters")
 		return
 	}
-	user := s.findUserByEmail(sub)
+	user := s.findUserByEmail(email)
 	if user == nil {
 		c.String(400, "Invalid user")
 		return
@@ -160,48 +178,69 @@ func (s *Server) handleAuthorizePost(c *gin.Context) {
 		c.String(500, "Failed to generate authorization code")
 		return
 	}
-	authTime := time.Now().Unix()
+	now := time.Now()
 	s.authMux.Lock()
+	for k, v := range s.authCodes {
+		if v.ExpiresAt.Before(now) {
+			delete(s.authCodes, k)
+		}
+	}
 	s.authCodes[code] = authCodeData{
 		User:                *user,
-		ClientID:            clientID,
-		RedirectURI:         redirectURI,
-		ExpiresAt:           time.Now().Add(authCodeTTL),
-		Nonce:               nonce,
-		AuthTime:            authTime,
-		CodeChallenge:       codeChallenge,
-		CodeChallengeMethod: codeChallengeMethod,
+		ClientID:            p.ClientID,
+		RedirectURI:         p.RedirectURI,
+		ExpiresAt:           now.Add(authCodeTTL),
+		Nonce:               p.Nonce,
+		AuthTime:            now.Unix(),
+		CodeChallenge:       p.CodeChallenge,
+		CodeChallengeMethod: p.CodeChallengeMethod,
 	}
 	s.authMux.Unlock()
-	u, err := url.Parse(redirectURI)
+	u, err := url.Parse(p.RedirectURI)
 	if err != nil {
 		c.String(400, "Invalid redirect_uri")
 		return
 	}
 	q := u.Query()
 	q.Set("code", code)
-	if state != "" {
-		q.Set("state", state)
+	if p.State != "" {
+		q.Set("state", p.State)
 	}
 	u.RawQuery = q.Encode()
-	c.Redirect(302, u.String())
+	c.Redirect(http.StatusFound, u.String())
+}
+
+// tokenError writes an RFC 6749 §5.2 JSON error so client libraries can
+// surface the `error` code instead of choking on plain text.
+func tokenError(c *gin.Context, status int, code, desc string) {
+	c.JSON(status, gin.H{"error": code, "error_description": desc})
+}
+
+// tokenClientID returns the client_id from the POST form, falling back to
+// HTTP Basic auth (client_secret_basic) which many client libraries default to.
+func tokenClientID(c *gin.Context) string {
+	if id := c.PostForm("client_id"); id != "" {
+		return id
+	}
+	if id, _, ok := c.Request.BasicAuth(); ok {
+		if dec, err := url.QueryUnescape(id); err == nil {
+			return dec
+		}
+		return id
+	}
+	return ""
 }
 
 func (s *Server) handleToken(c *gin.Context) {
 	code := c.PostForm("code")
-	clientID := c.PostForm("client_id")
+	clientID := tokenClientID(c)
 	redirectURI := c.PostForm("redirect_uri")
 	codeVerifier := c.PostForm("code_verifier")
 	s.authMux.Lock()
 	auth, ok := s.authCodes[code]
 	if !ok || auth.ExpiresAt.Before(time.Now()) {
 		s.authMux.Unlock()
-		c.String(400, "Invalid or expired code")
-		return
-	}
-	if clientID != auth.ClientID {
-		s.authMux.Unlock()
-		c.String(400, "Invalid client_id for code")
+		tokenError(c, 400, "invalid_grant", "invalid or expired authorization code")
 		return
 	}
 	delete(s.authCodes, code)
@@ -209,6 +248,12 @@ func (s *Server) handleToken(c *gin.Context) {
 	// Spec-forgiving checks: real OIDC providers reject these; mocc warns and
 	// proceeds so existing test harnesses keep working, but the deviation is
 	// visible in logs so bugs surface before hitting a hardened provider.
+	if gt := c.PostForm("grant_type"); gt != "authorization_code" {
+		log.Printf("[warn] /token grant_type=%q (expected \"authorization_code\") — a real provider would reject this", gt)
+	}
+	if clientID != auth.ClientID {
+		log.Printf("[warn] /token client_id %q does not match /authorize %q — a real provider would reject this", clientID, auth.ClientID)
+	}
 	if redirectURI != "" && redirectURI != auth.RedirectURI {
 		log.Printf("[warn] /token redirect_uri %q does not match /authorize %q — a real provider would reject this", redirectURI, auth.RedirectURI)
 	} else if redirectURI == "" && auth.RedirectURI != "" {
@@ -218,10 +263,10 @@ func (s *Server) handleToken(c *gin.Context) {
 		log.Printf("[warn] /token received code_verifier but /authorize had no code_challenge — a real provider would reject this")
 	}
 	if err := verifyPKCE(auth, codeVerifier); err != nil {
-		c.String(400, err.Error())
+		tokenError(c, 400, "invalid_grant", err.Error())
 		return
 	}
-	claims := tokenClaims(auth.User, issuer(c), clientID)
+	claims := tokenClaims(auth.User, s.baseURL(c), auth.ClientID)
 	if auth.Nonce != "" {
 		claims["nonce"] = auth.Nonce
 	}
@@ -230,11 +275,10 @@ func (s *Server) handleToken(c *gin.Context) {
 	}
 	token, err := s.Keys.SignIDToken(claims)
 	if err != nil {
-		c.String(500, "Failed to sign token")
+		tokenError(c, 500, "server_error", "failed to sign token")
 		return
 	}
-	resp := map[string]string{"access_token": token, "id_token": token, "token_type": "Bearer", "expires_in": "300"}
-	c.JSON(200, resp)
+	c.JSON(200, gin.H{"access_token": token, "id_token": token, "token_type": "Bearer", "expires_in": 300})
 }
 
 func (s *Server) handleTokenByEmail(c *gin.Context) {
@@ -248,7 +292,9 @@ func (s *Server) handleTokenByEmail(c *gin.Context) {
 		c.String(404, "User not found")
 		return
 	}
-	claims := tokenClaims(*selected, issuer(c), "")
+	// Optional ?aud=... sets the audience; ID tokens without aud fail strict
+	// client validation. A JSON body can still override it via extra claims.
+	claims := tokenClaims(*selected, s.baseURL(c), c.Query("aud"))
 	if c.Request.Body != nil {
 		body, err := io.ReadAll(c.Request.Body)
 		if err != nil {
@@ -276,30 +322,37 @@ func (s *Server) handleJWKS(c *gin.Context) {
 	c.JSON(200, s.Keys.JWKS())
 }
 
+// unauthorized writes an RFC 6750 Bearer challenge plus a JSON error body.
+func unauthorized(c *gin.Context, desc string) {
+	desc = strings.ReplaceAll(truncateDisplay(desc, 120), `"`, `'`)
+	c.Header("WWW-Authenticate", `Bearer error="invalid_token", error_description="`+desc+`"`)
+	c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token", "error_description": desc})
+}
+
+func setIfMissing(m map[string]interface{}, key string, value interface{}) {
+	if _, exists := m[key]; !exists {
+		m[key] = value
+	}
+}
+
 func (s *Server) handleUserInfo(c *gin.Context) {
 	tokenString, err := extractBearerToken(c.Request)
 	if err != nil {
-		c.Header("WWW-Authenticate", `Bearer error="invalid_token", error_description="`+truncateDisplay(err.Error(), 120)+`"`)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+		unauthorized(c, err.Error())
 		return
 	}
 
 	parsedToken, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		if token.Method.Alg() != jwt.SigningMethodRS256.Alg() {
-			return nil, fmt.Errorf("unexpected signing method %s", token.Method.Alg())
-		}
 		return s.Keys.Public, nil
 	}, jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()}))
-	if err != nil || parsedToken == nil || !parsedToken.Valid {
-		c.Header("WWW-Authenticate", `Bearer error="invalid_token", error_description="`+truncateDisplay(fmt.Sprintf("token validation failed: %v", err), 120)+`"`)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+	if err != nil || !parsedToken.Valid {
+		unauthorized(c, fmt.Sprintf("token validation failed: %v", err))
 		return
 	}
 
 	claims, ok := parsedToken.Claims.(jwt.MapClaims)
 	if !ok {
-		c.Header("WWW-Authenticate", `Bearer error="invalid_token", error_description="unsupported claims type"`)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+		unauthorized(c, "unsupported claims type")
 		return
 	}
 
@@ -313,8 +366,7 @@ func (s *Server) handleUserInfo(c *gin.Context) {
 		}
 	}
 	if sub == "" {
-		c.Header("WWW-Authenticate", `Bearer error="invalid_token", error_description="token missing subject claims"`)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+		unauthorized(c, "token missing subject claims")
 		return
 	}
 
@@ -323,19 +375,13 @@ func (s *Server) handleUserInfo(c *gin.Context) {
 
 	if user := s.findUserBySub(sub); user != nil {
 		if user.Email != "" {
-			if _, exists := response["email"]; !exists {
-				response["email"] = user.Email
-			}
+			setIfMissing(response, "email", user.Email)
 		}
 		if user.Name != "" {
-			if _, exists := response["name"]; !exists {
-				response["name"] = user.Name
-			}
+			setIfMissing(response, "name", user.Name)
 		}
 		for k, v := range user.Claims {
-			if _, exists := response[k]; !exists {
-				response[k] = v
-			}
+			setIfMissing(response, k, v)
 		}
 	}
 
@@ -343,7 +389,7 @@ func (s *Server) handleUserInfo(c *gin.Context) {
 }
 
 func (s *Server) handleDiscovery(c *gin.Context) {
-	issuer := issuer(c)
+	issuer := s.baseURL(c)
 	config := map[string]interface{}{
 		"issuer":                                issuer,
 		"authorization_endpoint":                issuer + "/authorize",
@@ -352,6 +398,7 @@ func (s *Server) handleDiscovery(c *gin.Context) {
 		"userinfo_endpoint":                     issuer + "/userinfo",
 		"id_token_signing_alg_values_supported": []string{"RS256"},
 		"response_types_supported":              []string{"code"},
+		"grant_types_supported":                 []string{"authorization_code"},
 		"subject_types_supported":               []string{"public"},
 		"scopes_supported":                      []string{"openid", "email", "profile"},
 		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "none"},
@@ -387,16 +434,14 @@ func extractBearerToken(r *http.Request) (string, error) {
 }
 
 func filterUserInfoClaims(claims jwt.MapClaims) map[string]interface{} {
+	// "sub" is reserved here because the caller sets it explicitly.
 	reserved := map[string]struct{}{
-		"iss": {}, "aud": {}, "iat": {}, "exp": {}, "nbf": {}, "jti": {},
+		"iss": {}, "sub": {}, "aud": {}, "iat": {}, "exp": {}, "nbf": {}, "jti": {},
 		"azp": {}, "at_hash": {}, "c_hash": {}, "auth_time": {},
 	}
 	result := make(map[string]interface{})
 	for k, v := range claims {
 		if _, skip := reserved[k]; skip {
-			continue
-		}
-		if k == "sub" {
 			continue
 		}
 		result[k] = v
