@@ -9,7 +9,7 @@ Add this feature to your `devcontainer.json`:
 ```json
 {
     "features": {
-        "ghcr.io/jonasbg/mocc/mocc:1": {}
+        "ghcr.io/jonasbg/mocc-feature/mocc:1": {}
     }
 }
 ```
@@ -28,7 +28,7 @@ Add this feature to your `devcontainer.json`:
 ```json
 {
     "features": {
-        "ghcr.io/jonasbg/mocc/mocc:1": {
+        "ghcr.io/jonasbg/mocc-feature/mocc:1": {
             "version": "latest",
             "port": "9999",
             "autostart": true
@@ -44,7 +44,7 @@ To use your own users configuration from your repository, point to it within the
 ```json
 {
     "features": {
-        "ghcr.io/jonasbg/mocc/mocc:1": {
+        "ghcr.io/jonasbg/mocc-feature/mocc:1": {
             "users": "${containerWorkspaceFolder}/users.yaml",
             "autostart": true
         }
@@ -60,7 +60,7 @@ Alternatively, set the `MOCC_USERS` environment variable via `containerEnv`:
         "MOCC_USERS": "${containerWorkspaceFolder}/users.yaml"
     },
     "features": {
-        "ghcr.io/jonasbg/mocc/mocc:1": {
+        "ghcr.io/jonasbg/mocc-feature/mocc:1": {
             "autostart": true
         }
     }
@@ -113,7 +113,7 @@ Remember to add port forwarding in your `devcontainer.json`:
 {
     "forwardPorts": [9999],
     "features": {
-        "ghcr.io/jonasbg/mocc/mocc:1": {
+        "ghcr.io/jonasbg/mocc-feature/mocc:1": {
             "autostart": true
         }
     }
