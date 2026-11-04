@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"io/fs"
 	"log"
 	"mime"
 	"net/http"
@@ -74,6 +75,14 @@ func New(config moccconfig.Config, keys *oidc.KeySet) *Server {
 			return
 		}
 		clean := strings.TrimPrefix(path, "/")
+		// Reject anything that is not a plain relative path ("..", empty
+		// elements, absolute paths). embed.FS already refuses these, but the
+		// on-disk dev fallback below would otherwise let "/static/../../x"
+		// read arbitrary files relative to the working directory.
+		if !fs.ValidPath(clean) {
+			c.Status(404)
+			return
+		}
 
 		// try embedded FS (assets/static/clean) first
 		if f, err := templates.TemplatesFS.Open("assets/static/" + clean); err == nil {
