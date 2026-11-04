@@ -890,14 +890,34 @@ func TestStaticCSSServed(t *testing.T) {
 }
 
 func TestStaticRejectsPathTraversal(t *testing.T) {
+	// The on-disk dev fallback resolves devStaticRoots relative to the working
+	// directory. From the package directory that root does not exist, so the
+	// kernel fails before ever following "..", and a missing guard would go
+	// unnoticed. Run from the repo root, where the fallback is actually live.
+	t.Chdir("../..")
 	s := New(moccconfig.Config{Users: []moccconfig.User{{Name: "Alice", Email: "alice@example.com"}}}, oidc.GenerateKeySet())
 
-	req := httptest.NewRequest("GET", "/static/../users.yaml", nil)
+	for _, p := range []string{
+		"/static/../users.yaml",
+		"/static/../../../../go.mod",
+		"/static/%2e%2e/%2e%2e/%2e%2e/%2e%2e/go.mod",
+		"/static/x/../../../../../go.mod",
+		"/static/../../../../../../../../../../etc/passwd",
+	} {
+		req := httptest.NewRequest("GET", p, nil)
+		w := httptest.NewRecorder()
+		s.Engine.ServeHTTP(w, req)
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("%s: expected 404 for path traversal, got %d (body starts %q)", p, w.Code, strings.SplitN(w.Body.String(), "\n", 2)[0])
+		}
+	}
+
+	// A legitimate asset is still served from the same working directory.
+	req := httptest.NewRequest("GET", "/static/styles.css", nil)
 	w := httptest.NewRecorder()
 	s.Engine.ServeHTTP(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 for path traversal, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /static/styles.css, got %d", w.Code)
 	}
 }
 
