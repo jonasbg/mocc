@@ -12,9 +12,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege: the job only needs to read the repo and push to GHCR.
+permissions:
+  contents: read
+  packages: write
+
 env:
   REPO: ${{ github.repository }}
-  TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
   docker-build:
@@ -91,7 +95,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ env.TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       # Build and push main image
       - name: Build and push image
