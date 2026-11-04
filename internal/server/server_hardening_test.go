@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"net/url"
 	"strings"
@@ -9,6 +10,8 @@ import (
 
 	"mocc/internal/moccconfig"
 	"mocc/internal/oidc"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 func newHardeningServer(t *testing.T) (*Server, []moccconfig.User) {
@@ -109,4 +112,69 @@ func TestTokenExpiredCodeIsRemoved(t *testing.T) {
 	if _, ok := s.authCodes["old"]; ok {
 		t.Fatal("expired code should be deleted on failed redemption")
 	}
+}
+
+func TestTokenAcceptsClientIDFromBasicAuth(t *testing.T) {
+	s, users := newHardeningServer(t)
+	code := doAuthorize(t, s.Engine, users, "basic-client", "http://localhost/cb", "", "", "")
+
+	form := url.Values{}
+	form.Set("grant_type", "authorization_code")
+	form.Set("code", code)
+	req := httptest.NewRequest("POST", "/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth("basic-client", "whatever")
+	w := httptest.NewRecorder()
+	s.Engine.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("expected 200 with client_secret_basic, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	claims := decodeClaims(t, resp["id_token"].(string))
+	if claims["aud"] != "basic-client" {
+		t.Fatalf("expected aud=basic-client, got %v", claims["aud"])
+	}
+
+	// Wrong client in Basic auth must still be rejected.
+	code = doAuthorize(t, s.Engine, users, "basic-client", "http://localhost/cb", "", "", "")
+	req = httptest.NewRequest("POST", "/token", strings.NewReader(form.Encode()))
+	form.Set("code", code)
+	req = httptest.NewRequest("POST", "/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth("other-client", "whatever")
+	w = httptest.NewRecorder()
+	s.Engine.ServeHTTP(w, req)
+	if w.Code != 400 {
+		t.Fatalf("expected 400 for mismatched Basic client_id, got %d", w.Code)
+	}
+}
+
+func TestTokenExpiresInIsNumeric(t *testing.T) {
+	s, users := newHardeningServer(t)
+	code := doAuthorize(t, s.Engine, users, "c", "http://localhost/cb", "", "", "")
+	w := doToken(t, s.Engine, code, "c", "")
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if _, ok := resp["expires_in"].(float64); !ok {
+		t.Fatalf("expires_in must be a JSON number, got %T (%v)", resp["expires_in"], resp["expires_in"])
+	}
+}
+
+func decodeClaims(t *testing.T, token string) jwt.MapClaims {
+	t.Helper()
+	parser := jwt.NewParser()
+	claims := jwt.MapClaims{}
+	if _, _, err := parser.ParseUnverified(token, claims); err != nil {
+		t.Fatalf("parse token: %v", err)
+	}
+	return claims
 }

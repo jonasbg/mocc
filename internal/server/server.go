@@ -265,6 +265,13 @@ func (s *Server) evictExpiredCodesLocked(now time.Time) {
 func (s *Server) handleToken(c *gin.Context) {
 	code := c.PostForm("code")
 	clientID := c.PostForm("client_id")
+	if clientID == "" {
+		// Discovery advertises client_secret_basic, so accept the client_id
+		// from HTTP Basic credentials when it is not in the form body.
+		if user, _, ok := c.Request.BasicAuth(); ok {
+			clientID = user
+		}
+	}
 	redirectURI := c.PostForm("redirect_uri")
 	codeVerifier := c.PostForm("code_verifier")
 	s.authMux.Lock()
@@ -336,7 +343,8 @@ func (s *Server) handleToken(c *gin.Context) {
 		c.String(500, "Failed to sign token")
 		return
 	}
-	resp := map[string]string{"access_token": token, "id_token": token, "token_type": "Bearer", "expires_in": "300"}
+	// expires_in is numeric per RFC 6749 §5.1; strict clients reject "300".
+	resp := gin.H{"access_token": token, "id_token": token, "token_type": "Bearer", "expires_in": 300}
 	c.JSON(200, resp)
 }
 
