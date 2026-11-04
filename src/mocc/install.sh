@@ -87,7 +87,7 @@ else
     if ! command -v go &> /dev/null; then
         echo "Go is not installed. Installing Go..."
         # Install Go if not present
-        GO_VERSION="1.26.0"
+        GO_VERSION="1.27.3"
         curl -fsSL "https://go.dev/dl/go${GO_VERSION}.${OS}-${ARCH}.tar.gz" -o /tmp/go.tar.gz
         tar -C /usr/local -xzf /tmp/go.tar.gz
         export PATH=$PATH:/usr/local/go/bin
@@ -119,31 +119,40 @@ else
     echo "Warning: mocc not found in PATH after installation"
 fi
 
-# Persist MOCC configuration as environment variables
+# Persist MOCC configuration as environment variables.
+# %q shell-quotes the option values so paths with spaces or quotes survive
+# and nothing in them is evaluated when the profile is sourced.
 mkdir -p /etc/profile.d
-cat > /etc/profile.d/mocc.sh << ENVSETUP
-# MOCC environment configuration
-export MOCC_PORT="${PORT}"
-export MOCC_USERS="${USERS}"
-ENVSETUP
+{
+    echo "# MOCC environment configuration"
+    printf 'export MOCC_PORT=%q\n' "${PORT}"
+    printf 'export MOCC_USERS=%q\n' "${USERS}"
+} > /etc/profile.d/mocc.sh
 chmod +x /etc/profile.d/mocc.sh
 
 # Setup autostart if enabled
 if [ "${AUTOSTART}" = "true" ]; then
     echo "Setting up autostart..."
 
-    # Create a startup script with embedded defaults
-    cat > /usr/local/bin/mocc-start.sh << STARTUP
-#!/bin/bash
-MOCC_ARGS="--host 0.0.0.0 --port \${MOCC_PORT:-${PORT}}"
-if [ -n "\${MOCC_USERS}" ]; then
-    MOCC_ARGS="\${MOCC_ARGS} --users \${MOCC_USERS}"
-elif [ -n "${USERS}" ]; then
-    MOCC_ARGS="\${MOCC_ARGS} --users ${USERS}"
+    # Create a startup script with embedded defaults. The defaults are
+    # embedded shell-quoted (%q) and the runtime values are passed as array
+    # elements, so a users path containing spaces is one argument.
+    {
+        echo '#!/bin/bash'
+        printf 'DEFAULT_PORT=%q\n' "${PORT}"
+        printf 'DEFAULT_USERS=%q\n' "${USERS}"
+        cat << 'STARTUP'
+PORT="${MOCC_PORT:-${DEFAULT_PORT}}"
+MOCC_ARGS=(--host 0.0.0.0 --port "${PORT}")
+if [ -n "${MOCC_USERS}" ]; then
+    MOCC_ARGS+=(--users "${MOCC_USERS}")
+elif [ -n "${DEFAULT_USERS}" ]; then
+    MOCC_ARGS+=(--users "${DEFAULT_USERS}")
 fi
-nohup mocc \${MOCC_ARGS} > /tmp/mocc.log 2>&1 &
-echo "MOCC started on port \${MOCC_PORT:-${PORT}}"
+nohup mocc "${MOCC_ARGS[@]}" > /tmp/mocc.log 2>&1 &
+echo "MOCC started on port ${PORT}"
 STARTUP
+    } > /usr/local/bin/mocc-start.sh
     chmod +x /usr/local/bin/mocc-start.sh
 
     # Add to bashrc for interactive shells
