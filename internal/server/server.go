@@ -219,27 +219,30 @@ func (s *Server) handleAuthorizePost(c *gin.Context) {
 		c.String(400, "Invalid user")
 		return
 	}
-	b := make([]byte, 32)
-	rand.Read(b)
-	code := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(b)
-	authTime := time.Now().Unix()
-	s.authMux.Lock()
-	s.authCodes[code] = authCodeData{
-		User:                *user,
-		ClientID:            clientID,
-		RedirectURI:         redirectURI,
-		ExpiresAt:           time.Now().Add(5 * time.Minute),
-		Nonce:               nonce,
-		AuthTime:            authTime,
-		CodeChallenge:       codeChallenge,
-		CodeChallengeMethod: codeChallengeMethod,
-	}
-	s.authMux.Unlock()
+	// Validate redirect_uri before minting a code so a bad URI does not leave
+	// an orphaned entry in authCodes.
 	u, err := url.Parse(redirectURI)
 	if err != nil {
 		c.String(400, "Invalid redirect_uri")
 		return
 	}
+	b := make([]byte, 32)
+	rand.Read(b)
+	code := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(b)
+	now := time.Now()
+	s.authMux.Lock()
+	s.evictExpiredCodesLocked(now)
+	s.authCodes[code] = authCodeData{
+		User:                *user,
+		ClientID:            clientID,
+		RedirectURI:         redirectURI,
+		ExpiresAt:           now.Add(5 * time.Minute),
+		Nonce:               nonce,
+		AuthTime:            now.Unix(),
+		CodeChallenge:       codeChallenge,
+		CodeChallengeMethod: codeChallengeMethod,
+	}
+	s.authMux.Unlock()
 	q := u.Query()
 	q.Set("code", code)
 	if state != "" {
@@ -247,6 +250,16 @@ func (s *Server) handleAuthorizePost(c *gin.Context) {
 	}
 	u.RawQuery = q.Encode()
 	c.Redirect(302, u.String())
+}
+
+// evictExpiredCodesLocked drops expired authorization codes so unredeemed
+// codes do not accumulate forever. Caller must hold authMux.
+func (s *Server) evictExpiredCodesLocked(now time.Time) {
+	for code, data := range s.authCodes {
+		if data.ExpiresAt.Before(now) {
+			delete(s.authCodes, code)
+		}
+	}
 }
 
 func (s *Server) handleToken(c *gin.Context) {
@@ -257,6 +270,9 @@ func (s *Server) handleToken(c *gin.Context) {
 	s.authMux.Lock()
 	auth, ok := s.authCodes[code]
 	if !ok || auth.ExpiresAt.Before(time.Now()) {
+		if ok {
+			delete(s.authCodes, code)
+		}
 		s.authMux.Unlock()
 		c.String(400, "Invalid or expired code")
 		return
