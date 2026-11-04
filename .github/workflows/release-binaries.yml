@@ -40,10 +40,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: '1.26.x'
 
@@ -79,7 +79,7 @@ jobs:
           rm -rf "${STAGING_DIR}"
 
       - name: Upload release asset
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/mocc-${{ matrix.goos }}-${{ matrix.goarch }}.${{ matrix.archive_extension }}
         env:
