@@ -173,6 +173,13 @@ func (s *Server) handleAuthorizePost(c *gin.Context) {
 		c.String(400, "Invalid user")
 		return
 	}
+	// Parse redirect_uri before minting the code so a bad URI does not leave
+	// an orphaned entry in authCodes that can never be delivered or redeemed.
+	u, err := url.Parse(p.RedirectURI)
+	if err != nil {
+		c.String(400, "Invalid redirect_uri")
+		return
+	}
 	code, err := newAuthCode()
 	if err != nil {
 		c.String(500, "Failed to generate authorization code")
@@ -196,11 +203,6 @@ func (s *Server) handleAuthorizePost(c *gin.Context) {
 		CodeChallengeMethod: p.CodeChallengeMethod,
 	}
 	s.authMux.Unlock()
-	u, err := url.Parse(p.RedirectURI)
-	if err != nil {
-		c.String(400, "Invalid redirect_uri")
-		return
-	}
 	q := u.Query()
 	q.Set("code", code)
 	if p.State != "" {
@@ -239,6 +241,10 @@ func (s *Server) handleToken(c *gin.Context) {
 	s.authMux.Lock()
 	auth, ok := s.authCodes[code]
 	if !ok || auth.ExpiresAt.Before(time.Now()) {
+		if ok {
+			// Expired: drop it now rather than waiting for the next /authorize sweep.
+			delete(s.authCodes, code)
+		}
 		s.authMux.Unlock()
 		tokenError(c, 400, "invalid_grant", "invalid or expired authorization code")
 		return

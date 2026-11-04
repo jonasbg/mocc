@@ -921,6 +921,48 @@ func TestStaticRejectsPathTraversal(t *testing.T) {
 	}
 }
 
+func TestHandleAuthorizePost_InvalidRedirectDoesNotStoreCode(t *testing.T) {
+	users := []moccconfig.User{{Name: "Alice", Email: "alice@example.com"}}
+	s := New(moccconfig.Config{Users: users}, oidc.GenerateKeySet())
+
+	form := url.Values{}
+	form.Set("email", users[0].Email)
+	form.Set("client_id", "c")
+	form.Set("redirect_uri", "http://[::1") // unparseable
+	req := httptest.NewRequest("POST", "/authorize", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	s.Engine.ServeHTTP(w, req)
+	if w.Code != 400 {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+
+	s.authMux.Lock()
+	defer s.authMux.Unlock()
+	if len(s.authCodes) != 0 {
+		t.Fatalf("expected no stored codes for invalid redirect_uri, got %d", len(s.authCodes))
+	}
+}
+
+func TestHandleToken_ExpiredCodeIsRemoved(t *testing.T) {
+	users := []moccconfig.User{{Name: "Alice", Email: "alice@example.com"}}
+	s := New(moccconfig.Config{Users: users}, oidc.GenerateKeySet())
+
+	s.authMux.Lock()
+	s.authCodes["old"] = authCodeData{User: users[0], ClientID: "c", ExpiresAt: time.Now().Add(-time.Second)}
+	s.authMux.Unlock()
+
+	if w := doToken(t, s.Engine, "old", "c", ""); w.Code != 400 {
+		t.Fatalf("expected 400 for expired code, got %d", w.Code)
+	}
+
+	s.authMux.Lock()
+	defer s.authMux.Unlock()
+	if _, ok := s.authCodes["old"]; ok {
+		t.Fatal("expired code should be deleted on failed redemption")
+	}
+}
+
 func TestIndexTemplateRendering(t *testing.T) {
 	users := []moccconfig.User{{Name: "Alice Example", Email: "alice@example.com"}}
 	config := moccconfig.Config{
