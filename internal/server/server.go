@@ -326,7 +326,7 @@ func (s *Server) handleToken(c *gin.Context) {
 			return
 		}
 	}
-	issuer := fmt.Sprintf("http://%s", c.Request.Host)
+	issuer := s.baseURL(c)
 	claims := jwt.MapClaims{"sub": auth.User.Sub, "email": auth.User.Email, "iss": issuer, "aud": clientID}
 	if auth.Nonce != "" {
 		claims["nonce"] = auth.Nonce
@@ -365,7 +365,7 @@ func (s *Server) handleTokenByEmail(c *gin.Context) {
 		c.String(404, "User not found")
 		return
 	}
-	issuer := fmt.Sprintf("http://%s", c.Request.Host)
+	issuer := s.baseURL(c)
 	claims := jwt.MapClaims{
 		"sub":   selected.Sub,
 		"email": selected.Email,
@@ -469,7 +469,9 @@ func (s *Server) handleUserInfo(c *gin.Context) {
 }
 
 func (s *Server) handleDiscovery(c *gin.Context) {
-	issuer := fmt.Sprintf("http://%s", c.Request.Host)
+	// Must match the iss claim in minted tokens and the BaseURL in SKILL.md,
+	// otherwise clients behind a forwarding proxy fail issuer validation.
+	issuer := s.baseURL(c)
 	config := map[string]interface{}{
 		"issuer":                                issuer,
 		"authorization_endpoint":                issuer + "/authorize",
@@ -722,7 +724,9 @@ func (s *Server) findUserBySub(sub string) *moccconfig.User {
 
 // baseURL reconstructs the public base URL of the running instance from the
 // request. Honors X-Forwarded-Proto and X-Forwarded-Host so it behaves
-// correctly behind reverse proxies and devcontainer port forwarding.
+// correctly behind reverse proxies and devcontainer port forwarding. It is
+// the single source of truth for the OIDC issuer (discovery, token iss claim,
+// SKILL.md) so they can never disagree.
 func (s *Server) baseURL(c *gin.Context) string {
 	scheme := "http"
 	if c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https") {

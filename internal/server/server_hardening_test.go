@@ -169,6 +169,69 @@ func TestTokenExpiresInIsNumeric(t *testing.T) {
 	}
 }
 
+func TestIssuerConsistentBehindProxy(t *testing.T) {
+	s, users := newHardeningServer(t)
+	const want = "https://mocc.example.com"
+
+	// Discovery document.
+	req := httptest.NewRequest("GET", "/.well-known/openid-configuration", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-Forwarded-Host", "mocc.example.com")
+	w := httptest.NewRecorder()
+	s.Engine.ServeHTTP(w, req)
+	var disc map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &disc); err != nil {
+		t.Fatalf("invalid discovery JSON: %v", err)
+	}
+	if disc["issuer"] != want {
+		t.Fatalf("discovery issuer = %v, want %s", disc["issuer"], want)
+	}
+	if disc["token_endpoint"] != want+"/token" {
+		t.Fatalf("token_endpoint = %v", disc["token_endpoint"])
+	}
+
+	// Token from the code flow.
+	code := doAuthorize(t, s.Engine, users, "c", "http://localhost/cb", "", "", "")
+	form := url.Values{}
+	form.Set("code", code)
+	form.Set("client_id", "c")
+	req = httptest.NewRequest("POST", "/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-Forwarded-Host", "mocc.example.com")
+	w = httptest.NewRecorder()
+	s.Engine.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("token: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if iss := decodeClaims(t, resp["id_token"].(string))["iss"]; iss != want {
+		t.Fatalf("code-flow iss = %v, want %s", iss, want)
+	}
+
+	// Direct mint.
+	req = httptest.NewRequest("GET", "/token/"+users[0].Email, nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-Forwarded-Host", "mocc.example.com")
+	w = httptest.NewRecorder()
+	s.Engine.ServeHTTP(w, req)
+	var mint map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &mint)
+	if iss := decodeClaims(t, mint["token"].(string))["iss"]; iss != want {
+		t.Fatalf("direct-mint iss = %v, want %s", iss, want)
+	}
+
+	// Without forwarding headers the issuer is still the plain Host.
+	req = httptest.NewRequest("GET", "/.well-known/openid-configuration", nil)
+	w = httptest.NewRecorder()
+	s.Engine.ServeHTTP(w, req)
+	_ = json.Unmarshal(w.Body.Bytes(), &disc)
+	if disc["issuer"] != "http://example.com" {
+		t.Fatalf("plain issuer = %v, want http://example.com", disc["issuer"])
+	}
+}
+
 func decodeClaims(t *testing.T, token string) jwt.MapClaims {
 	t.Helper()
 	parser := jwt.NewParser()
