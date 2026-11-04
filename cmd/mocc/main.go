@@ -63,14 +63,14 @@ func main() {
 		Addr:    addr,
 		Handler: s.Engine,
 	}
-	chanHttpErr := make(chan error)
+	// Buffered so the goroutine never blocks (and leaks) if main has already
+	// moved on; use a local err so this goroutine does not race with the
+	// Shutdown error write in the select below.
+	chanHttpErr := make(chan error, 1)
 
 	go func() {
-		err = httpServ.ListenAndServe()
-		if err != nil {
-			if !errors.Is(err, http.ErrServerClosed) {
-				chanHttpErr <- err
-			}
+		if serveErr := httpServ.ListenAndServe(); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			chanHttpErr <- serveErr
 		}
 	}()
 
@@ -93,8 +93,8 @@ func main() {
 		fmt.Println("\nWork done? Well MOCC again tomorrow!")
 		os.Exit(0)
 	// handle unexpected errors from the http server
-	case <-chanHttpErr:
-		log.Println("server closed unexpectedly:", err)
+	case serveErr := <-chanHttpErr:
+		log.Println("server closed unexpectedly:", serveErr)
 		os.Exit(1)
 	}
 
