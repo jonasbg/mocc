@@ -38,3 +38,20 @@ ENV GIN_MODE=release
 EXPOSE 9999
 
 ENTRYPOINT ["/usr/local/bin/mocc"]
+
+# Build provenance (populated by CI build-args: GIT_COMMIT/GIT_BRANCH/BUILD_DATE/VERSION).
+# Kept last so per-build values don't invalidate the cache of the steps above.
+ARG GIT_COMMIT
+ARG GIT_BRANCH
+ARG BUILD_DATE
+ARG VERSION=dev
+LABEL org.opencontainers.image.source="https://github.com/jonasbg/mocc" \
+      org.opencontainers.image.revision="$GIT_COMMIT" \
+      org.opencontainers.image.ref.name="$GIT_BRANCH" \
+      org.opencontainers.image.created="$BUILD_DATE" \
+      org.opencontainers.image.version="$VERSION" \
+      org.opencontainers.image.title="mocc" \
+      org.opencontainers.image.description="Minimal OpenID Connect (OIDC) mock provider for local development and testing" \
+      org.opencontainers.image.vendor="jonasbg" \
+      org.opencontainers.image.url="https://github.com/jonasbg/mocc" \
+      org.opencontainers.image.documentation="https://github.com/jonasbg/mocc#readme"

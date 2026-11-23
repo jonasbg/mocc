@@ -89,6 +89,16 @@ jobs:
             type=ref,event=tag
             type=raw,value=latest,enable=${{ github.ref_name == 'main' }}
             type=raw,value=dev,enable=${{ github.ref_type == 'branch' && github.ref_name != 'main' }}
+          labels: |
+            org.opencontainers.image.title=mocc
+            org.opencontainers.image.description=Minimal OpenID Connect (OIDC) mock provider for local development and testing
+            org.opencontainers.image.vendor=jonasbg
+            org.opencontainers.image.url=https://github.com/jonasbg/mocc
+            org.opencontainers.image.documentation=https://github.com/jonasbg/mocc#readme
+
+      - name: Get build date (UTC, RFC 3339)
+        id: build-date
+        run: echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v4
@@ -109,5 +119,9 @@ jobs:
           labels: ${{ steps.meta-main.outputs.labels }}
           build-args: |
             MOCC_VERSION=${{ env.VERSION }}
+            GIT_COMMIT=${{ github.sha }}
+            GIT_BRANCH=${{ github.ref_name }}
+            BUILD_DATE=${{ steps.build-date.outputs.date }}
+            VERSION=${{ steps.meta-main.outputs.version }}
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.REPO }}:cache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.REPO }}:cache,mode=max
