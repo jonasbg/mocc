@@ -96,6 +96,21 @@ jobs:
             org.opencontainers.image.url=https://github.com/jonasbg/mocc
             org.opencontainers.image.documentation=https://github.com/jonasbg/mocc#readme
 
+      # metadata-action always emits licenses= (empty, as the repo has no
+      # licence on GitHub) and cannot be told not to; drop empty-valued labels
+      # so the image does not carry a blank licenses label.
+      - name: Drop empty labels
+        id: labels
+        env:
+          LABELS: ${{ steps.meta-main.outputs.labels }}
+        run: |
+          delim="EOF_$(openssl rand -hex 8)"
+          {
+            echo "labels<<$delim"
+            printf '%s\n' "$LABELS" | grep -v '=$' || true
+            echo "$delim"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Get build date (UTC, RFC 3339)
         id: build-date
         run: echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
@@ -116,7 +131,7 @@ jobs:
           platforms: linux/amd64, linux/arm64
           push: true
           tags: ${{ steps.meta-main.outputs.tags }}
-          labels: ${{ steps.meta-main.outputs.labels }}
+          labels: ${{ steps.labels.outputs.labels }}
           build-args: |
             MOCC_VERSION=${{ env.VERSION }}
             GIT_COMMIT=${{ github.sha }}
